@@ -9,6 +9,10 @@
 #include "options.h"
 #include "tissue.h"
 
+Tissue* tissue_create(int width, int height);
+void tissue_initialize(Tissue *tissue);
+void tissue_free(Tissue *tissue);
+
 int main(int argc, char *argv[])
 {
 	const char *config_file = (argc > 1) ? argv[1] : "config.conf";

@@ -30,17 +30,17 @@ Tissue;
 //void tissue_advance(Tissue *tissue, int step);
 //void tissue_free(Tissue *tissue);
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-// Tissue API:
-Tissue* tissue_create(int width, int height);
-void tissue_initialize(Tissue *tissue);
-void tissue_free(Tissue *tissue);
-
-#ifdef __cplusplus
-}
-#endif
+//#ifdef __cplusplus
+//extern "C" {
+//#endif
+//
+//// Tissue API:
+//Tissue* tissue_create(int width, int height);
+//void tissue_initialize(Tissue *tissue);
+//void tissue_free(Tissue *tissue);
+//
+//#ifdef __cplusplus
+//}
+//#endif
 
 #endif

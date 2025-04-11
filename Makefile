@@ -29,8 +29,4 @@ $(SRC_DIR)/%.o: $(SRC_DIR)/%.cu
 
 # === Clean ===
 clean:
-	rm -f *.o *~ $(TARGET)
-
-clean-all:
-	rm -f *.o *~ *.dat $(TARGET)
-
+	rm -f src/*.o $(TARGET)

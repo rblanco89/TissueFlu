@@ -5,7 +5,7 @@
 
 // ========================================================================
 
-Tissue* tissue_create(int width, int height)
+Tissue* tissue_initialize(int width, int height)
 {
 	Tissue *tissue;
 	cudaMallocManaged(&tissue, sizeof(Tissue));
