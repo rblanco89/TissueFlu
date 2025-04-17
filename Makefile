@@ -1,6 +1,6 @@
 # === Configuration ===
 HOST_COMPILER = gcc
-NVCC = nvcc -ccbin $(HOST_COMPILER) 
+NVCC = nvcc -ccbin $(HOST_COMPILER)
 NVCCFLAGS = -O2
 LIBRARIES = -lm -lcurand
 
@@ -9,8 +9,8 @@ SRC_DIR = src
 SRCS_C = $(wildcard $(SRC_DIR)/*.c)
 SRCS_CU = $(wildcard $(SRC_DIR)/*.cu)
 
-OBJS_C = $(SRCS_C:%.c=%.o)
-OBJS_CU = $(SRCS_CU:%.cu=%.o)
+OBJS_C = $(SRCS_C:.c=.o)
+OBJS_CU = $(SRCS_CU:.cu=.o)
 
 TARGET = aeroflu
 
@@ -20,7 +20,6 @@ all: $(TARGET)
 $(TARGET): $(OBJS_C) $(OBJS_CU)
 	$(NVCC) $^ -o $@ $(LIBRARIES)
 
-
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.c
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
@@ -29,4 +28,9 @@ $(SRC_DIR)/%.o: $(SRC_DIR)/%.cu
 
 # === Clean ===
 clean:
-	rm -f src/*.o $(TARGET)
+	rm -f $(SRC_DIR)/*.o $(TARGET)
+
+# === Run ===
+run: all
+	mkdir -p results
+	./$(TARGET) --config=config.conf --structure=cell_positions.csv

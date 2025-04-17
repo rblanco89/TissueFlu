@@ -24,9 +24,12 @@ void parse_options(const char *filename)
 
 		if (sscanf(line, "%[^=]=%s", key, value) == 2)
 		{
-			if (strcmp(key, "gridWidth") == 0) options.gridWidth = atoi(value);
-			else if (strcmp(key, "gridHeight") == 0) options.gridHeight = atoi(value);
-			else if (strcmp(key, "timeSteps") == 0) options.timeSteps = atoi(value);
+			if (strcmp(key, "timeSteps ") == 0)
+				options.timeSteps = atoi(value);
+			else if (strcmp(key, "incubationPeriod ") == 0)
+				options.incubationPeriod = atoi(value);
+			else if (strcmp(key, "expressingPeriod ") == 0)
+				options.expressingPeriod = atoi(value);
 		}
 	}
 

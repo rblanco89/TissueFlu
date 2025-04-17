@@ -3,9 +3,9 @@
 
 typedef struct
 {
-    int gridWidth;
-    int gridHeight;
     int timeSteps;
+    int incubationPeriod;
+    int expressingPeriod;
 }
 SimOptions;
 
