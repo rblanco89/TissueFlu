@@ -116,19 +116,20 @@ int main(int argc, char *argv[])
 	// Initial infection
 	/*==========================================*/
 
-    cells[315].state = CELL_INCUBATING;
+	cells[315].state = CELL_INCUBATING;
 
 	/*==========================================*/
 	// Initialize snapshot file
 	/*==========================================*/
 
 	char filename[128];
-    sprintf(filename, "results/snapshots.xyz");
-    FILE *fSnap = fopen(filename, "w");
-    if (!fSnap) {
-        fprintf(stderr, "Error: could not open %s for writing\n", filename);
-        return 1;
-    }
+	sprintf(filename, "results/snapshots.xyz");
+	FILE *fSnap = fopen(filename, "w");
+	if (!fSnap)
+	{
+		fprintf(stderr, "Error: could not open %s for writing\n", filename);
+		return 1;
+	}
 
 	/*==========================================*/
 	// Main loop: Simulation
@@ -140,7 +141,7 @@ int main(int argc, char *argv[])
 	{
 		printf("Step %d/%d\n", step, options.timeSteps);
 
-		//tissue_advance(tissue);
+		tissue_advance(cells, numCells, options.incubationPeriod, options.expressingPeriod);
 
 		tissue_snapshots(cells, fSnap, numCells);
 
@@ -151,7 +152,7 @@ int main(int argc, char *argv[])
 	printf("Simulation completed\n");
 
 
-    // Clean up
+	// Clean up
 	cudaFree(cells);
 
 	return 0;

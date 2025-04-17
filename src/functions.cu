@@ -26,7 +26,7 @@ void tissue_snapshots(Cell *cells, FILE *fSnap, int numCells)
 			
         // Format: state radius x y
         fprintf(fSnap, "%d %f %f %f %f\n",
-						state, 0.5, r.x, r.y, r.z);
+			state, 0.5, r.x, r.y, r.z);
 	}
 }
 
@@ -36,49 +36,101 @@ void build_neighbors(Cell *cells, int numCells, float cutoff)
 {
 	for (int i = 0; i < numCells; i++)
 	{
-        cells[i].numNeighbors = 0;
-    }
+		cells[i].numNeighbors = 0;
+	}
 
 	for (int i=0; i<numCells; i++)
 	{
-        cells[i].numNeighbors = 0;
+		cells[i].numNeighbors = 0;
 
-		for (int j=i+1; j<numCells; j++)
+		for (int j=0; j<numCells; j++)
 		{
+			if (i == j) continue;
 			float3 ri = cells[i].position;
 			float3 rj = cells[j].position;
 
-            float dx = ri.x - rj.x;
-            float dy = ri.y - rj.y;
-            float dz = ri.z - rj.z;
+			float dx = ri.x - rj.x;
+			float dy = ri.y - rj.y;
+			float dz = ri.z - rj.z;
 
-            float dist2 = dx*dx + dy*dy + dz*dz;
+			float dist2 = dx*dx + dy*dy + dz*dz;
 
-            if (dist2 <= cutoff*cutoff)
+			if (dist2 <= cutoff*cutoff)
 			{
 				// Add j to i's neighbor list
-                if (cells[i].numNeighbors < MAX_NEIGHBORS)
-                    cells[i].neighbors[cells[i].numNeighbors++] = j;
-                else
+                		if (cells[i].numNeighbors < MAX_NEIGHBORS)
+                    			cells[i].neighbors[cells[i].numNeighbors++] = j;
+                		else
 				{
-                    fprintf(stderr, "Warning: cell %d neighbor list full\n", i);
+                    			fprintf(stderr, "Warning: cell %d neighbor list full\n", i);
 					break;
 				}
 
-                // Add i to j's neighbor list
-                if (cells[j].numNeighbors < MAX_NEIGHBORS)
-                    cells[j].neighbors[cells[j].numNeighbors++] = i;
-                else
-				{
-                    fprintf(stderr, "Warning: cell %d neighbor list full\n", j);
-                    break;
-                }
-            }
-        }
-    }
+                		// Add i to j's neighbor list
+                		//if (cells[j].numNeighbors < MAX_NEIGHBORS)
+                    		//	cells[j].neighbors[cells[j].numNeighbors++] = i;
+                		//else
+				//{
+                    		//	fprintf(stderr, "Warning: cell %d neighbor list full\n", j);
+                    		//	break;
+                		//}
+            		}
+        	}
+	}
 }
 
 // ==================================================================
+
+__host__ void tissue_advance(Cell *cells, int numCells, float incubationPeriod, float expressingPeriod)
+{
+	for (int i=0; i<numCells; i++)
+	{
+        	Cell *cell = &cells[i];
+
+        	switch (cell->state)
+		{
+			case CELL_INCUBATING:
+                		cell->incubationTime -= 1;
+                		if (cell->incubationTime <= 0)
+				{
+                    			cell->state = CELL_EXPRESSING;
+                    			cell->expressingTime = expressingPeriod;
+                		}
+                		break;
+
+            		case CELL_EXPRESSING:
+                		cell->expressingTime -= 1;
+                		cell->virions += 1.0f;
+                		if (cell->expressingTime <= 0)
+				{
+                    			cell->state = CELL_DEAD;
+                    			cell->virions = 0.0f;
+                		}
+                		break;
+
+            		default:
+                		break;
+		}
+	}
+
+	// Infect susceptible neighbors (after updating states above)
+	for (int i = 0; i < numCells; i++)
+	{
+		if (cells[i].state != CELL_EXPRESSING || cells[i].virions <= 5.0f) continue;
+
+		for (int j = 0; j < cells[i].numNeighbors; j++)
+		{
+			int neighborIdx = cells[i].neighbors[j];
+			Cell *neighbor = &cells[neighborIdx];
+
+			if (neighbor->state == CELL_SUSCEPTIBLE)
+			{
+                		neighbor->state = CELL_INCUBATING;
+                		neighbor->incubationTime = incubationPeriod;
+			}
+		}
+	}
+}
 
 //__host__ void tissue_advance(Tissue *tissue)
 //{
