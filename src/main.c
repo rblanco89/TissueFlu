@@ -96,7 +96,7 @@ int main(int argc, char *argv[])
 		}
 
 		cells[i].position = r;
-		cells[i].state = CELL_SUSCEPTIBLE;
+		cells[i].state = SUSCEPTIBLE;
 		cells[i].virions = 0.0f;
 		cells[i].incubationTime = options.incubationPeriod;
 		cells[i].expressingTime = options.expressingPeriod;
@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
 	// Initial infection
 	/*==========================================*/
 
-	cells[315].state = CELL_INCUBATING;
+	cells[315].state = INCUBATING;
 
 	/*==========================================*/
 	// Initialize snapshot file
@@ -141,7 +141,8 @@ int main(int argc, char *argv[])
 	{
 		printf("Step %d/%d\n", step, options.timeSteps);
 
-		tissue_advance(cells, numCells, options.incubationPeriod, options.expressingPeriod);
+		tissue_update(cells, numCells);
+		tissue_infection(cells, numCells);
 
 		tissue_snapshots(cells, fSnap, numCells);
 

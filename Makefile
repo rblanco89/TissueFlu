@@ -33,4 +33,4 @@ clean:
 # === Run ===
 run: all
 	mkdir -p results
-	./$(TARGET) --config=config.conf --structure=cell_positions.csv
+	./$(TARGET) --config=config.conf --structure=rectangle.csv

@@ -2,10 +2,10 @@
 
 typedef enum
 {
-	CELL_SUSCEPTIBLE,
-	CELL_INCUBATING,
-	CELL_EXPRESSING,
-	CELL_DEAD
+	SUSCEPTIBLE,
+	INCUBATING,
+	EXPRESSING,
+	DEAD
 }
 CellState;
 
@@ -29,7 +29,8 @@ extern "C" {
 
 void tissue_snapshots(Cell *cells, FILE *fSnap, int numCells);
 void build_neighbors(Cell *cells, int numCells, float cutoff);
-void tissue_advance(Cell *cells, int numCells, float incubationPeriod, float expressingPeriod);
+void tissue_update(Cell *cells, int numCells);
+void tissue_infection(Cell *cells, int numCells);
 //Tissue* tissue_create(int width, int height);
 //void tissue_initialize(Tissue *tissue);
 //void tissue_free(Tissue *tissue);
