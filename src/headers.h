@@ -1,8 +1,9 @@
+#define THS_MAX 256
 #define MAX_NEIGHBORS 32
 
 typedef enum
 {
-	SUSCEPTIBLE,
+	HEALTHY,
 	INCUBATING,
 	EXPRESSING,
 	DEAD
@@ -23,20 +24,17 @@ typedef struct
 }
 Cell;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+//#ifdef __cplusplus
+//extern "C" {
+//#endif
 
-void tissue_snapshots(Cell *cells, FILE *fSnap, int numCells);
-void build_neighbors(Cell *cells, int numCells, float cutoff);
-void tissue_update(Cell *cells, int numCells);
-void tissue_infection(Cell *cells, int numCells);
-//Tissue* tissue_create(int width, int height);
-//void tissue_initialize(Tissue *tissue);
-//void tissue_free(Tissue *tissue);
-//void tissue_advance(Tissue *tissue);
-//void tissue_snapshots(Tissue *tissue, FILE *fSnap);
+void parse_options(const char *filename);
+__host__ long nextPow2(long x);
+__host__ void tissue_snapshots(Cell *cells, FILE *fSnap, int numCells);
+__host__ void build_neighbors(Cell *cells, int numCells, float cutoff);
+__global__ void tissue_update(Cell *cells, int numCells, float virionProduction);
+__host__ void tissue_infection(Cell *cells, int numCells);
 
-#ifdef __cplusplus
-}
-#endif
+//#ifdef __cplusplus
+//}
+//#endif

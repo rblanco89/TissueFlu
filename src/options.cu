@@ -3,7 +3,7 @@
 #include <string.h>
 #include "options.h"
 
-SimOptions options;  // global struct
+Options options;  // global struct
 
 void parse_options(const char *filename)
 {
@@ -26,10 +26,23 @@ void parse_options(const char *filename)
 		{
 			if (strcmp(key, "timeSteps ") == 0)
 				options.timeSteps = atoi(value);
+			else if (strcmp(key, "numInfections ") == 0)
+				options.numInfections = atoi(value);
 			else if (strcmp(key, "incubationPeriod ") == 0)
 				options.incubationPeriod = atoi(value);
 			else if (strcmp(key, "expressingPeriod ") == 0)
 				options.expressingPeriod = atoi(value);
+
+			else if (strcmp(key, "neighRadius ") == 0)
+				options.neighRadius = atof(value);
+			else if (strcmp(key, "initialVirions ") == 0)
+				options.initialVirions = atof(value);
+			else if (strcmp(key, "virionProduction ") == 0)
+				options.virionProduction = atof(value);
+			else if (strcmp(key, "virionDiffusion ") == 0)
+				options.virionDiffusion = atof(value);
+			else if (strcmp(key, "virionClearance ") == 0)
+				options.virionClearance = atof(value);
 		}
 	}
 

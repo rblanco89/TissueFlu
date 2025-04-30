@@ -96,7 +96,7 @@ int main(int argc, char *argv[])
 		}
 
 		cells[i].position = r;
-		cells[i].state = SUSCEPTIBLE;
+		cells[i].state = HEALTHY;
 		cells[i].virions = 0.0f;
 		cells[i].incubationTime = options.incubationPeriod;
 		cells[i].expressingTime = options.expressingPeriod;
@@ -110,19 +110,22 @@ int main(int argc, char *argv[])
 	// Find neighbors and store in cell structure
 	/*==========================================*/
 
-	build_neighbors(cells, numCells, 1.5);
+	build_neighbors(cells, numCells, options.neighRadius);
 
 	/*==========================================*/
 	// Initial infection
 	/*==========================================*/
 
+	// For now I'm infecting a central cell of a rectangle tissue
 	cells[315].state = INCUBATING;
+	cells[315].virions = options.initialVirions;
 
 	/*==========================================*/
-	// Initialize snapshot file
+	// Initialize files for results
 	/*==========================================*/
 
 	char filename[128];
+
 	sprintf(filename, "results/snapshots.xyz");
 	FILE *fSnap = fopen(filename, "w");
 	if (!fSnap)
@@ -131,23 +134,53 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	sprintf(filename, "results/viralLoad.csv");
+	FILE *fVirions = fopen(filename, "w");
+	if (!fVirions)
+	{
+		fprintf(stderr, "Error: could not open %s for writing\n", filename);
+		return 1;
+	}
+	fprintf(fVirions, "Days,Viral Load\n");
+
 	/*==========================================*/
 	// Main loop: Simulation
 	/*==========================================*/
+
+	int ths, blks;
+
+	// Estimate the number of threads and blocks for the GPU
+	ths = (numCells < THS_MAX) ? nextPow2(numCells) : THS_MAX;
+	blks = 1 + (numCells - 1)/ths;
+
+	float viralLoad;
+
+	short noPrintFlag;
+	int printStep = 0.01*options.timeSteps;
 
 	printf("Starting simulation...\n");
 
 	for (int step=0; step<options.timeSteps; step++)
 	{
-		printf("Step %d/%d\n", step, options.timeSteps);
+		noPrintFlag = step%printStep;
+		if (!noPrintFlag) printf("Step %d/%d\n", step, options.timeSteps);
 
-		tissue_update(cells, numCells);
+		viralLoad = 0.0;
+		for (int i=0; i<numCells; i++) viralLoad += cells[i].virions;
+		fprintf(fVirions, "%d,%f\n", step, viralLoad);
+
+		tissue_update<<<blks, ths>>>(cells, numCells, options.virionProduction);
+		cudaDeviceSynchronize();
+
+		//tissue_update(cells, numCells);
 		tissue_infection(cells, numCells);
 
-		tissue_snapshots(cells, fSnap, numCells);
+		if (!noPrintFlag) tissue_snapshots(cells, fSnap, numCells);
 
 		cudaDeviceSynchronize();
 	}
+
+	fclose(fVirions);
 	fclose(fSnap);
 
 	printf("Simulation completed\n");

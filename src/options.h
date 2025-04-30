@@ -4,14 +4,18 @@
 typedef struct
 {
     int timeSteps;
+    int numInfections;
     int incubationPeriod;
     int expressingPeriod;
+
+	float neighRadius;
+	float initialVirions;
+	float virionProduction;
+	float virionDiffusion;
+	float virionClearance;
 }
-SimOptions;
+Options;
 
-extern SimOptions options;
-
-void parse_options(const char *filename);
+extern Options options;
 
 #endif
-

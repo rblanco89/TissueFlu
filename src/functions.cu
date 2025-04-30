@@ -4,10 +4,24 @@
 #include <string.h>
 #include <math.h>
 #include "headers.h"
+#include "options.h"
 
 // ==================================================================
 
-void tissue_snapshots(Cell *cells, FILE *fSnap, int numCells)
+__host__ long nextPow2(long x)
+{
+    --x;
+    x |= x >> 1;
+    x |= x >> 2;
+    x |= x >> 4;
+    x |= x >> 8;
+    x |= x >> 16;
+    return ++x;
+}
+
+// ==================================================================
+
+__host__ void tissue_snapshots(Cell *cells, FILE *fSnap, int numCells)
 {
 	// Define the grid and declare properties
 	fprintf(fSnap, "%d\n", numCells);
@@ -31,17 +45,12 @@ void tissue_snapshots(Cell *cells, FILE *fSnap, int numCells)
 
 // ==================================================================
 
-void build_neighbors(Cell *cells, int numCells, float cutoff)
+__host__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 {
 	for (int i = 0; i < numCells; i++)
-	{
 		cells[i].numNeighbors = 0;
-	}
 
 	for (int i=0; i<numCells-1; i++)
-	{
-		//cells[i].numNeighbors = 0;
-
 		for (int j=i+1; j<numCells; j++)
 		{
 			//if (i == j) continue;
@@ -74,32 +83,63 @@ void build_neighbors(Cell *cells, int numCells, float cutoff)
 				break;
 			}
 		}
-	}
 }
 
 // ==================================================================
 
-__host__ void tissue_update(Cell *cells, int numCells)
+//__host__ void tissue_update(Cell *cells, int numCells)
+//{
+//	for (int i=0; i<numCells; i++)
+//	{
+//		Cell *cell = &cells[i];
+//		switch (cell->state)
+//		{
+//			case HEALTHY:
+//				if (cell->virions > 50)
+//					cell->state = INCUBATING;
+//				break;
+//			case INCUBATING:
+//				cell->incubationTime--;
+//				if (cell->incubationTime <= 0)
+//					cell->state = EXPRESSING;
+//				break;
+//			case EXPRESSING:
+//				cell->expressingTime--;
+//				cell->virions += options.virionProduction;
+//				if (cell->expressingTime <= 0)
+//					cell->state = DEAD;
+//				break;
+//			default:
+//				break;
+//		}
+//	}
+//}
+
+__global__ void tissue_update(Cell *cells, int numCells, float virionProduction)
 {
-	for (int i=0; i<numCells; i++)
+	int ind = threadIdx.x + blockIdx.x*blockDim.x;
+	if (ind >= numCells) return;
+
+	Cell *cell = &cells[ind];
+	switch (cell->state)
 	{
-		Cell *cell = &cells[i];
-		switch (cell->state)
-		{
-			case INCUBATING:
-				cell->incubationTime -= 1;
-				if (cell->incubationTime <= 0)
-					cell->state = EXPRESSING;
-				break;
-			case EXPRESSING:
-				cell->expressingTime -= 1;
-				cell->virions += 1.0f;
-				if (cell->expressingTime <= 0)
-					cell->state = DEAD;
-				break;
-			default:
-				break;
-		}
+		case HEALTHY:
+			if (cell->virions > 50)
+				cell->state = INCUBATING;
+			break;
+		case INCUBATING:
+			cell->incubationTime--;
+			if (cell->incubationTime <= 0)
+				cell->state = EXPRESSING;
+			break;
+		case EXPRESSING:
+			cell->expressingTime--;
+			cell->virions += virionProduction;
+			if (cell->expressingTime <= 0)
+				cell->state = DEAD;
+			break;
+		default:
+			break;
 	}
 }
 
@@ -110,60 +150,14 @@ __host__ void tissue_infection(Cell *cells, int numCells)
 	// Infect susceptible neighbors
 	for (int i=0; i<numCells; i++)
 	{
-		if (cells[i].state != EXPRESSING || cells[i].virions <= 5.0f) continue;
+		float meanVirions = cells[i].virions;
+		for (int j=0; j<cells[i].numNeighbors; j++)
+			meanVirions += cells[cells[i].neighbors[j]].virions;
+		meanVirions /= cells[i].numNeighbors + 1;
 
-		for (int j = 0; j < cells[i].numNeighbors; j++)
-		{
-			int neighborIdx = cells[i].neighbors[j];
-			Cell *neighbor = &cells[neighborIdx];
-
-			if (neighbor->state == SUSCEPTIBLE)
-				neighbor->state = INCUBATING;
-		}
+		// Update count of virions for each cell
+		float diffusedVirions = options.virionDiffusion*(meanVirions - cells[i].virions);
+		float updatedVirions = cells[i].virions + diffusedVirions;
+		cells[i].virions = (1 - options.virionClearance)*updatedVirions;
 	}
 }
-
-//__host__ void tissue_advance(Tissue *tissue)
-//{
-//	int width = tissue->width;
-//	int height = tissue->height;
-//    //int totalCells = width*height;
-//
-//    for (int y=0; y<height; y++)
-//	{
-//        for (int x=0; x<width; x++)
-
-//		{
-//            int idx = y*width + x;
-//            Cell *cell = &tissue->cells[idx];
-//
-//            if (cell->state == CELL_INCUBATING) 
-//			{
-//				cell->state = CELL_EXPRESSING;
-//				continue;
-//			}
-//
-//            if (cell->state == CELL_EXPRESSING)
-//			{
-//                // Produce virions, infect neighbors
-//                cell->virionCount += 3.0f;
-//
-//                int dx[4] = { -1, 1, 0, 0 };
-//                int dy[4] = { 0, 0, -1, 1 };
-//
-//                for (int d=0; d<4; d++)
-//				{
-//                    int nx = x + dx[d];
-//                    int ny = y + dy[d];
-//                    if (nx >= 0 && nx < width && ny >= 0 && ny < height)
-//					{
-//                        int nidx = ny*width + nx;
-//                        Cell *neighbor = &tissue->cells[nidx];
-//                        if (neighbor->state == CELL_SUSCEPTIBLE && cell->virionCount > 3.0f)
-//                            neighbor->state = CELL_INCUBATING;
-//                    }
-//                }
-//            }
-//        }
-//    }
-//}
