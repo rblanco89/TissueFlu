@@ -4,7 +4,6 @@
 #include <string.h>
 #include <math.h>
 #include "headers.h"
-#include "options.h"
 
 // ==================================================================
 
@@ -53,7 +52,6 @@ __host__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 	for (int i=0; i<numCells-1; i++)
 		for (int j=i+1; j<numCells; j++)
 		{
-			//if (i == j) continue;
 			float3 ri = cells[i].position;
 			float3 rj = cells[j].position;
 
@@ -115,7 +113,7 @@ __host__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 //	}
 //}
 
-__global__ void tissue_update(Cell *cells, int numCells, float virionProduction)
+__global__ void tissue_update(Cell *cells, int numCells, float virionProduction, float *ranUni)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
@@ -124,7 +122,7 @@ __global__ void tissue_update(Cell *cells, int numCells, float virionProduction)
 	switch (cell->state)
 	{
 		case HEALTHY:
-			if (cell->virions > 50)
+			if (0.001*cell->virions > ranUni[ind])
 				cell->state = INCUBATING;
 			break;
 		case INCUBATING:
@@ -145,7 +143,7 @@ __global__ void tissue_update(Cell *cells, int numCells, float virionProduction)
 
 // ==================================================================
 
-__host__ void tissue_infection(Cell *cells, int numCells)
+/*__host__ void tissue_infection(Cell *cells, int numCells)
 {
 	// Infect susceptible neighbors
 	for (int i=0; i<numCells; i++)
@@ -160,4 +158,23 @@ __host__ void tissue_infection(Cell *cells, int numCells)
 		float updatedVirions = cells[i].virions + diffusedVirions;
 		cells[i].virions = (1 - options.virionClearance)*updatedVirions;
 	}
+}*/
+
+__global__ void tissue_infection(Cell *cells, int numCells,
+								 float virionDiffusion, float virionClearance)
+{
+	int ind = threadIdx.x + blockIdx.x*blockDim.x;
+	if (ind >= numCells) return;
+
+	Cell cell = cells[ind];
+
+	float meanVirions = cell.virions;
+	for (int j=0; j<cell.numNeighbors; j++)
+		meanVirions += cells[cell.neighbors[j]].virions;
+	meanVirions /= cell.numNeighbors + 1;
+
+	// Update count of virions for each cell
+	float diffusedVirions = virionDiffusion*(meanVirions - cell.virions);
+
+	cells[ind].virions = (1.0 - virionClearance)*(cell.virions + diffusedVirions);
 }

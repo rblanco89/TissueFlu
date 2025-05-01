@@ -9,8 +9,8 @@
 #include <cuda_runtime.h>
 #include <curand.h>
 
-#include "options.h"
 #include "headers.h"
+#include "ranNumbers.h"
 
 int main(int argc, char *argv[])
 {
@@ -106,6 +106,20 @@ int main(int argc, char *argv[])
 
 	printf("Loaded %d cells from %s\n", numCells, structure_file);
 
+	// Initialize random numbers
+	ulong seed = options.ranSeed;
+	Ran ranUni(seed);
+	//Poissondev poisson(options.incubationPeriod, seed); // a = (aveTime/stdTime)^2; b = aveTime/stdTime^2
+
+	//printf("%d\n", poisson.dev());
+	
+	// Initialize random numbers with a standard normal distribution
+	float *d_ranUni;
+	curandGenerator_t gen;
+	cudaMalloc(&d_ranUni, numCells*sizeof(float)); // Array only for GPU
+	curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_MTGP32);
+	curandSetPseudoRandomGeneratorSeed(gen, seed);
+
 	/*==========================================*/
 	// Find neighbors and store in cell structure
 	/*==========================================*/
@@ -169,15 +183,21 @@ int main(int argc, char *argv[])
 		for (int i=0; i<numCells; i++) viralLoad += cells[i].virions;
 		fprintf(fVirions, "%d,%f\n", step, viralLoad);
 
-		tissue_update<<<blks, ths>>>(cells, numCells, options.virionProduction);
+		// GPU functions (kernels)
+
+		// Generate random numbers and then update positions
+		curandGenerateUniform(gen, d_ranUni, numCells);
+
+		tissue_update<<<blks, ths>>>(cells, numCells, options.virionProduction, d_ranUni);
+		tissue_infection<<<blks, ths>>>(cells, numCells, options.virionDiffusion,
+								  options.virionClearance);
 		cudaDeviceSynchronize();
 
+		// Host functions
 		//tissue_update(cells, numCells);
-		tissue_infection(cells, numCells);
+		//tissue_infection(cells, numCells);
 
 		if (!noPrintFlag) tissue_snapshots(cells, fSnap, numCells);
-
-		cudaDeviceSynchronize();
 	}
 
 	fclose(fVirions);

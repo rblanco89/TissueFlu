@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "options.h"
+#include "headers.h"
 
 Options options;  // global struct
 
@@ -32,6 +32,8 @@ void parse_options(const char *filename)
 				options.incubationPeriod = atoi(value);
 			else if (strcmp(key, "expressingPeriod ") == 0)
 				options.expressingPeriod = atoi(value);
+			else if (strcmp(key, "randSeed ") == 0)
+				options.ranSeed = atoi(value);
 
 			else if (strcmp(key, "neighRadius ") == 0)
 				options.neighRadius = atof(value);
