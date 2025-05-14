@@ -67,6 +67,7 @@ int main(int argc, char *argv[])
 	char line[256];
 	while (fgets(line, sizeof(line), fp)) numCells++;
 	rewind(fp); // reset file pointer
+	numCells--; // Skip the header line
 
 	// Allocate memory for cells
 	Cell *cells;
@@ -79,46 +80,48 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	// Initialize CPU random numbers
+	ulong seed = options.ranSeed;
+	Ran ranUni(seed);
+	Poissondev ranIncubation(options.incubationPeriod, seed); 
+	Poissondev ranExpressing(options.expressingPeriod, seed); 
+	
+	// Initialize GPU random numbers
+	float *d_ranUni;
+	curandGenerator_t gen;
+	cudaMalloc(&d_ranUni, numCells*sizeof(float)); // Array only for GPU
+	curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_MTGP32);
+	curandSetPseudoRandomGeneratorSeed(gen, seed);
+
 	// Read positions and initialize fields
-	for (int i = 0; i < numCells; i++)
+	for (int i=-1; i<numCells; i++)
 	{
 		float3 r;
 		if (fgets(line, sizeof(line), fp) == NULL)
 		{
-			fprintf(stderr, "Unexpected end of structure file at cell %d\n", i);
+			fprintf(stderr, "Unexpected end of structure file at cell %d\n", i+1);
 			break;
 		}
+		
+		// Skip header line
+		if (i == -1) continue;
 
 		if (sscanf(line, "%f,%f,%f", &r.x, &r.y, &r.z) != 3)
 		{
-			fprintf(stderr, "Invalid format in structure file at line %d\n", i + 1);
+			fprintf(stderr, "Invalid format in structure file at line %d\n", i + 2);
 			break;
 		}
 
 		cells[i].position = r;
 		cells[i].state = HEALTHY;
 		cells[i].virions = 0.0f;
-		cells[i].incubationTime = options.incubationPeriod;
-		cells[i].expressingTime = options.expressingPeriod;
+		cells[i].incubationTime = ranIncubation.dev();
+		cells[i].expressingTime = ranExpressing.dev();
 	}
 
 	fclose(fp);
 
 	printf("Loaded %d cells from %s\n", numCells, structure_file);
-
-	// Initialize random numbers
-	ulong seed = options.ranSeed;
-	Ran ranUni(seed);
-	//Poissondev poisson(options.incubationPeriod, seed); // a = (aveTime/stdTime)^2; b = aveTime/stdTime^2
-
-	//printf("%d\n", poisson.dev());
-	
-	// Initialize random numbers with a standard normal distribution
-	float *d_ranUni;
-	curandGenerator_t gen;
-	cudaMalloc(&d_ranUni, numCells*sizeof(float)); // Array only for GPU
-	curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_MTGP32);
-	curandSetPseudoRandomGeneratorSeed(gen, seed);
 
 	/*==========================================*/
 	// Find neighbors and store in cell structure
