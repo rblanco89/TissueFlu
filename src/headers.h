@@ -1,5 +1,5 @@
 #define THS_MAX 256
-#define MAX_NEIGHBORS 32
+#define MAX_NEIGHBORS 64
 
 typedef struct
 {
