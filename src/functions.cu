@@ -85,57 +85,62 @@ __host__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 
 // ==================================================================
 
-//__host__ void tissue_update(Cell *cells, int numCells)
-//{
-//	for (int i=0; i<numCells; i++)
-//	{
-//		Cell *cell = &cells[i];
-//		switch (cell->state)
-//		{
-//			case HEALTHY:
-//				if (cell->virions > 50)
-//					cell->state = INCUBATING;
-//				break;
-//			case INCUBATING:
-//				cell->incubationTime--;
-//				if (cell->incubationTime <= 0)
-//					cell->state = EXPRESSING;
-//				break;
-//			case EXPRESSING:
-//				cell->expressingTime--;
-//				cell->virions += options.virionProduction;
-//				if (cell->expressingTime <= 0)
-//					cell->state = DEAD;
-//				break;
-//			default:
-//				break;
-//		}
-//	}
-//}
-
-__global__ void tissue_update(Cell *cells, int numCells, float virionProduction, float *ranUni)
+__global__ void tissue_update(Cell *cells, int numCells,
+							  float virionProduction, float inflammationProduction,
+							  float *ranUni)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
 
+	short infecFlag = 0, refracFlag = 0;
+	float infecProb, refracProb;
 	Cell *cell = &cells[ind];
 	switch (cell->state)
 	{
 		case HEALTHY:
-			if (0.001*cell->virions > ranUni[ind])
+			infecProb = 0.001*cell->virions;
+			refracProb = 0.001*cell->inflammation;
+
+			if (infecProb > ranUni[ind]) infecFlag = 1;
+			if (refracProb > ranUni[ind]) refracFlag = 1;
+
+			if (infecFlag && refracFlag)
+			{
+				if (0.5 > ranUni[(ind+1)%ind]) infecFlag = 0;
+				else refracFlag = 0;
+			}
+
+			if (infecFlag)
+			{
 				cell->state = INCUBATING;
+			
+				// Randomly protect a percentage of cell (fake refractory state)
+				//if (0.2 > ranUni[(ind+1)%ind]) cell->state = REFRACTORY;
+				//else cell->state = INCUBATING;
+
+				break;
+			}
+
+			if (refracFlag) cell->state = REFRACTORY;
 			break;
+
+		case REFRACTORY:
+			break;
+
 		case INCUBATING:
 			cell->incubationTime--;
 			if (cell->incubationTime <= 0)
 				cell->state = EXPRESSING;
 			break;
+
 		case EXPRESSING:
 			cell->expressingTime--;
 			cell->virions += virionProduction;
+			cell->inflammation += inflammationProduction;
 			if (cell->expressingTime <= 0)
 				cell->state = DEAD;
 			break;
+
 		default:
 			break;
 	}
@@ -143,25 +148,9 @@ __global__ void tissue_update(Cell *cells, int numCells, float virionProduction,
 
 // ==================================================================
 
-/*__host__ void tissue_infection(Cell *cells, int numCells)
-{
-	// Infect susceptible neighbors
-	for (int i=0; i<numCells; i++)
-	{
-		float meanVirions = cells[i].virions;
-		for (int j=0; j<cells[i].numNeighbors; j++)
-			meanVirions += cells[cells[i].neighbors[j]].virions;
-		meanVirions /= cells[i].numNeighbors + 1;
-
-		// Update count of virions for each cell
-		float diffusedVirions = options.virionDiffusion*(meanVirions - cells[i].virions);
-		float updatedVirions = cells[i].virions + diffusedVirions;
-		cells[i].virions = (1 - options.virionClearance)*updatedVirions;
-	}
-}*/
-
 __global__ void tissue_infection(Cell *cells, int numCells,
-								 float virionDiffusion, float virionClearance)
+								 float virionDiffusion, float virionClearance,
+								 float inflammationDiffusion, float inflammationDecay)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
@@ -169,12 +158,23 @@ __global__ void tissue_infection(Cell *cells, int numCells,
 	Cell cell = cells[ind];
 
 	float meanVirions = cell.virions;
+	float meanInflammation = cell.inflammation;
+
 	for (int j=0; j<cell.numNeighbors; j++)
+	{
 		meanVirions += cells[cell.neighbors[j]].virions;
+		meanInflammation += cells[cell.neighbors[j]].inflammation;
+	}
+
 	meanVirions /= cell.numNeighbors + 1;
+	meanInflammation /= cell.numNeighbors + 1;
 
 	// Update count of virions for each cell
 	float diffusedVirions = virionDiffusion*(meanVirions - cell.virions);
-
 	cells[ind].virions = (1.0 - virionClearance)*(cell.virions + diffusedVirions);
+
+
+	// Update inflammation for each cell
+	float diffusedInflammation= inflammationDiffusion*(meanInflammation - cell.inflammation);
+	cells[ind].inflammation = (1.0 - inflammationDecay)*(cell.inflammation + diffusedInflammation);
 }

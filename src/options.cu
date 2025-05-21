@@ -45,6 +45,12 @@ void parse_options(const char *filename)
 				options.virionDiffusion = atof(value);
 			else if (strcmp(key, "virionClearance ") == 0)
 				options.virionClearance = atof(value);
+			else if (strcmp(key, "inflammationProduction ") == 0)
+				options.inflammationProduction = atof(value);
+			else if (strcmp(key, "inflammationDiffusion ") == 0)
+				options.inflammationDiffusion = atof(value);
+			else if (strcmp(key, "inflammationDecay ") == 0)
+				options.inflammationDecay = atof(value);
 		}
 	}
 

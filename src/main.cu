@@ -115,6 +115,7 @@ int main(int argc, char *argv[])
 		cells[i].position = r;
 		cells[i].state = HEALTHY;
 		cells[i].virions = 0.0f;
+		cells[i].inflammation = 0.0f;
 		cells[i].incubationTime = ranIncubation.dev();
 		cells[i].expressingTime = ranExpressing.dev();
 	}
@@ -134,8 +135,8 @@ int main(int argc, char *argv[])
 	/*==========================================*/
 
 	// For now I'm infecting a central cell of a rectangle tissue
-	cells[315].state = INCUBATING;
-	cells[315].virions = options.initialVirions;
+	cells[numCells/2 + 50].state = INCUBATING;
+	cells[numCells/2 + 50].virions = options.initialVirions;
 
 	/*==========================================*/
 	// Initialize files for results
@@ -191,9 +192,10 @@ int main(int argc, char *argv[])
 		// Generate random numbers and then update positions
 		curandGenerateUniform(gen, d_ranUni, numCells);
 
-		tissue_update<<<blks, ths>>>(cells, numCells, options.virionProduction, d_ranUni);
-		tissue_infection<<<blks, ths>>>(cells, numCells, options.virionDiffusion,
-								  options.virionClearance);
+		tissue_update<<<blks, ths>>>(cells, numCells, options.virionProduction, options.inflammationDecay,
+			d_ranUni);
+		tissue_infection<<<blks, ths>>>(cells, numCells, options.virionDiffusion,  options.virionClearance,
+			options.inflammationDiffusion, options.inflammationDecay);
 		cudaDeviceSynchronize();
 
 		// Host functions

@@ -1,7 +1,7 @@
 # === Configuration ===
 HOST_COMPILER = gcc
 NVCC = nvcc -ccbin $(HOST_COMPILER)
-NVCCFLAGS = -O2
+NVCCFLAGS = -O2 -arch=sm_86
 LIBRARIES = -lm -lcurand
 
 # === File Structure ===
@@ -18,7 +18,7 @@ TARGET = aeroflu
 all: $(TARGET)
 
 $(TARGET): $(OBJS_C) $(OBJS_CU)
-	$(NVCC) $^ -o $@ $(LIBRARIES)
+	$(NVCC) $(NVCCFLAGS) $^ -o $@ $(LIBRARIES)
 
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.c
 	$(NVCC) $(NVCCFLAGS) -c $< -o $@
