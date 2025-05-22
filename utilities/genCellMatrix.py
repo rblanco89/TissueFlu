@@ -1,6 +1,6 @@
 import random
-width = 100
-height = 100
+width = 200
+height = 200
 depth = 0
 spacing = 1.0  # cell spacing
 zpos = 0.0        # flat layer

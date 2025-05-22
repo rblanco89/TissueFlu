@@ -115,7 +115,7 @@ int main(int argc, char *argv[])
 		cells[i].position = r;
 		cells[i].state = HEALTHY;
 		cells[i].virions = 0.0f;
-		cells[i].inflammation = 0.0f;
+		cells[i].IFN = 0.0f;
 		cells[i].incubationTime = ranIncubation.dev();
 		cells[i].expressingTime = ranExpressing.dev();
 	}
@@ -134,9 +134,17 @@ int main(int argc, char *argv[])
 	// Initial infection
 	/*==========================================*/
 
-	// For now I'm infecting a central cell of a rectangle tissue
-	cells[numCells/2 + 50].state = INCUBATING;
-	cells[numCells/2 + 50].virions = options.initialVirions;
+	int ind;
+	for (int i=0; i<options.numInfections; i++)
+	{
+		do ind = numCells*ranUni.doub(); while (cells[ind].state == INCUBATING);
+		cells[ind].state = INCUBATING;
+		cells[ind].virions = options.initialVirions;
+	}
+
+	// Infecting a central cell of a rectangle tissue
+	//cells[numCells/2 + 50].state = INCUBATING;
+	//cells[numCells/2 + 50].virions = options.initialVirions;
 
 	/*==========================================*/
 	// Initialize files for results
@@ -152,60 +160,97 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	sprintf(filename, "results/viralLoad.csv");
-	FILE *fVirions = fopen(filename, "w");
-	if (!fVirions)
+	sprintf(filename, "results/tissueState.csv");
+	FILE *fTissue = fopen(filename, "w");
+	if (!fTissue)
 	{
 		fprintf(stderr, "Error: could not open %s for writing\n", filename);
 		return 1;
 	}
-	fprintf(fVirions, "Days,Viral Load\n");
+	fprintf(fTissue, "Time,ViralLoad,IFN,Health,Refractory,Infected,Dead\n");
 
 	/*==========================================*/
 	// Main loop: Simulation
 	/*==========================================*/
 
-	int ths, blks;
-
 	// Estimate the number of threads and blocks for the GPU
-	ths = (numCells < THS_MAX) ? nextPow2(numCells) : THS_MAX;
-	blks = 1 + (numCells - 1)/ths;
+	int ths = (numCells < THS_MAX) ? nextPow2(numCells) : THS_MAX;
+	int blks = 1 + (numCells - 1)/ths;
 
-	float viralLoad;
+	float viralLoad, IFNlevel;
+	int healthyCells, refractoryCells, infectedCells, deadCells;
 
-	short noPrintFlag;
+	short noPrintFlag, noMeasureFlag;
 	int printStep = 0.01*options.timeSteps;
+	int measureStep = 0.01*options.timeSteps;
 
 	printf("Starting simulation...\n");
 
 	for (int step=0; step<options.timeSteps; step++)
 	{
 		noPrintFlag = step%printStep;
-		if (!noPrintFlag) printf("Step %d/%d\n", step, options.timeSteps);
+		noMeasureFlag = step%measureStep;
 
-		viralLoad = 0.0;
-		for (int i=0; i<numCells; i++) viralLoad += cells[i].virions;
-		fprintf(fVirions, "%d,%f\n", step, viralLoad);
+		if (!noPrintFlag) tissue_snapshots(cells, fSnap, numCells);
+
+		if (!noMeasureFlag)
+		{
+			printf("Step %d/%d\n", step, options.timeSteps);
+			viralLoad = 0.0;
+			IFNlevel = 0.0;
+			healthyCells = 0;
+			refractoryCells = 0;
+			infectedCells = 0;
+			deadCells = 0;
+			for (int i=0; i<numCells; i++)
+			{
+				viralLoad += cells[i].virions;
+				IFNlevel += cells[i].IFN;
+				switch (cells[i].state)
+				{
+					case HEALTHY:
+						healthyCells++;
+						break;
+
+					case REFRACTORY:
+						refractoryCells++;
+						break;
+
+					case INCUBATING:
+						infectedCells++;
+						break;
+
+					case EXPRESSING:
+						infectedCells++;
+						break;
+
+					case DEAD:
+						deadCells++;
+						break;
+
+					default:
+						break;
+				}
+			}
+
+			fprintf(fTissue, "%d,%f,%f,%d,%d,%d,%d\n", step, viralLoad, IFNlevel,
+				healthyCells, refractoryCells, infectedCells, deadCells);
+		}
 
 		// GPU functions (kernels)
 
 		// Generate random numbers and then update positions
 		curandGenerateUniform(gen, d_ranUni, numCells);
 
-		tissue_update<<<blks, ths>>>(cells, numCells, options.virionProduction, options.inflammationDecay,
+		tissue_update<<<blks, ths>>>(cells, numCells, options.virionProduction, options.IFNproduction,
 			d_ranUni);
 		tissue_infection<<<blks, ths>>>(cells, numCells, options.virionDiffusion,  options.virionClearance,
-			options.inflammationDiffusion, options.inflammationDecay);
+			options.IFNdiffusion, options.IFNclearance);
+
 		cudaDeviceSynchronize();
-
-		// Host functions
-		//tissue_update(cells, numCells);
-		//tissue_infection(cells, numCells);
-
-		if (!noPrintFlag) tissue_snapshots(cells, fSnap, numCells);
 	}
 
-	fclose(fVirions);
+	fclose(fTissue);
 	fclose(fSnap);
 
 	printf("Simulation completed\n");

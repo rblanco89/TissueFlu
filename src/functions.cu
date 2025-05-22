@@ -6,6 +6,8 @@
 #include "headers.h"
 
 // ==================================================================
+// HOST FUNCTIONS
+// ==================================================================
 
 __host__ long nextPow2(long x)
 {
@@ -84,9 +86,18 @@ __host__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 }
 
 // ==================================================================
+// DEVICE FUNCTIONS
+// ==================================================================
+
+__device__ float sigmoidFun(float x, float A, float K)
+{
+	return 1/(1 + exp(-A*(x-K)));
+}
+
+// ==================================================================
 
 __global__ void tissue_update(Cell *cells, int numCells,
-							  float virionProduction, float inflammationProduction,
+							  float virionProduction, float IFNproduction,
 							  float *ranUni)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
@@ -98,8 +109,11 @@ __global__ void tissue_update(Cell *cells, int numCells,
 	switch (cell->state)
 	{
 		case HEALTHY:
-			infecProb = 0.001*cell->virions;
-			refracProb = 0.001*cell->inflammation;
+			//infecProb = 0.001*cell->virions;
+			//refracProb = 0.001*cell->IFN;
+
+			infecProb = sigmoidFun(log10(cell->virions), 2, 3);
+			refracProb = sigmoidFun(log10(cell->IFN), 2, 4);
 
 			if (infecProb > ranUni[ind]) infecFlag = 1;
 			if (refracProb > ranUni[ind]) refracFlag = 1;
@@ -136,7 +150,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 		case EXPRESSING:
 			cell->expressingTime--;
 			cell->virions += virionProduction;
-			cell->inflammation += inflammationProduction;
+			cell->IFN += IFNproduction;
 			if (cell->expressingTime <= 0)
 				cell->state = DEAD;
 			break;
@@ -150,7 +164,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 
 __global__ void tissue_infection(Cell *cells, int numCells,
 								 float virionDiffusion, float virionClearance,
-								 float inflammationDiffusion, float inflammationDecay)
+								 float IFNdiffusion, float IFNclearance)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
@@ -158,23 +172,23 @@ __global__ void tissue_infection(Cell *cells, int numCells,
 	Cell cell = cells[ind];
 
 	float meanVirions = cell.virions;
-	float meanInflammation = cell.inflammation;
+	float meanIFN = cell.IFN;
 
 	for (int j=0; j<cell.numNeighbors; j++)
 	{
 		meanVirions += cells[cell.neighbors[j]].virions;
-		meanInflammation += cells[cell.neighbors[j]].inflammation;
+		meanIFN += cells[cell.neighbors[j]].IFN;
 	}
 
 	meanVirions /= cell.numNeighbors + 1;
-	meanInflammation /= cell.numNeighbors + 1;
+	meanIFN /= cell.numNeighbors + 1;
 
 	// Update count of virions for each cell
 	float diffusedVirions = virionDiffusion*(meanVirions - cell.virions);
 	cells[ind].virions = (1.0 - virionClearance)*(cell.virions + diffusedVirions);
 
 
-	// Update inflammation for each cell
-	float diffusedInflammation= inflammationDiffusion*(meanInflammation - cell.inflammation);
-	cells[ind].inflammation = (1.0 - inflammationDecay)*(cell.inflammation + diffusedInflammation);
+	// Update IFN for each cell
+	float diffusedIFN= IFNdiffusion*(meanIFN - cell.IFN);
+	cells[ind].IFN = (1.0 - IFNclearance)*(cell.IFN + diffusedIFN);
 }

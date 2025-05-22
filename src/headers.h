@@ -14,9 +14,9 @@ typedef struct
 	float virionProduction;
 	float virionDiffusion;
 	float virionClearance;
-	float inflammationProduction;
-	float inflammationDiffusion;
-	float inflammationDecay;
+	float IFNproduction;
+	float IFNdiffusion;
+	float IFNclearance;
 }
 Options;
 
@@ -40,7 +40,7 @@ typedef struct
 	int incubationTime;
 	int expressingTime;
 	float virions;
-	float inflammation;
+	float IFN;
 
 	int numNeighbors;
 	int neighbors[MAX_NEIGHBORS];
@@ -60,6 +60,6 @@ __host__ void build_neighbors(Cell *cells, int numCells, float cutoff);
 //__host__ void tissue_infection(Cell *cells, int numCells);
 
 __global__ void tissue_update(Cell *cells, int numCells, float virionProduction,
-		float inflammationProduction, float *d_ranUni);
+		float IFNproduction, float *d_ranUni);
 __global__ void tissue_infection(Cell *cells, int numCells, float virionDiffusion,
-		float virionClearance, float inflammationDiffusion, float inflammationDecay);
+		float virionClearance, float IFNdiffusion, float IFNclearance);
