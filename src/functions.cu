@@ -104,6 +104,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 	if (ind >= numCells) return;
 
 	short infecFlag = 0, refracFlag = 0;
+	float virions, ifn;
 	float infecProb, refracProb;
 	Cell *cell = &cells[ind];
 	switch (cell->state)
@@ -112,8 +113,10 @@ __global__ void tissue_update(Cell *cells, int numCells,
 			//infecProb = 0.001*cell->virions;
 			//refracProb = 0.001*cell->IFN;
 
-			infecProb = sigmoidFun(log10(cell->virions), 2, 3);
-			refracProb = sigmoidFun(log10(cell->IFN), 2, 4);
+			virions = cell->virions <= 0.0f ? -38 : log10(cell->virions);
+			ifn = cell->IFN <= 0.0f ? -38 : log10(cell->IFN);
+			infecProb = sigmoidFun(virions, 2, 3);
+			refracProb = sigmoidFun(ifn, 2, 4);
 
 			if (infecProb > ranUni[ind]) infecFlag = 1;
 			if (refracProb > ranUni[ind]) refracFlag = 1;
@@ -136,6 +139,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 			}
 
 			if (refracFlag) cell->state = REFRACTORY;
+
 			break;
 
 		case REFRACTORY:

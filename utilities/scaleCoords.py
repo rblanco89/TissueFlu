@@ -3,7 +3,7 @@ import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
 # Load previously saved CSV
-df = pd.read_csv('Cell_Coords_Normalized.csv')
+df = pd.read_csv('all_slices.csv')
 coords = df[['X', 'Y', 'Z']].values
 
 # Compute nearest neighbor distances
@@ -20,4 +20,4 @@ scaled_coords = coords / global_min
 
 # Save scaled coordinates
 df_scaled = pd.DataFrame(scaled_coords, columns=['X', 'Y', 'Z'])
-df_scaled.to_csv('cell_coords_scaled.csv', index=False)
+df_scaled.to_csv('scaled_coords.csv', index=False)

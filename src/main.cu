@@ -143,8 +143,9 @@ int main(int argc, char *argv[])
 	}
 
 	// Infecting a central cell of a rectangle tissue
-	//cells[numCells/2 + 50].state = INCUBATING;
-	//cells[numCells/2 + 50].virions = options.initialVirions;
+	//ind = numCells/2 + 99;
+	//cells[ind].state = INCUBATING;
+	//cells[ind].virions = options.initialVirions;
 
 	/*==========================================*/
 	// Initialize files for results
