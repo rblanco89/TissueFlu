@@ -29,7 +29,7 @@ __host__ void tissue_snapshots(Cell *cells, FILE *fSnap, int numCells)
 	//fprintf(fSnap, "Lattice=\"%.2f 0.00 0.00 ", width);
 	//fprintf(fSnap, "0.00 %.2f 0.00 ", height);
 	//fprintf(fSnap, "0.00 0.00 %.2f\" ", 2.0);
-	fprintf(fSnap, "Properties=species:I:1:Radius:R:1:pos:R:3\n");
+	fprintf(fSnap, "Properties=species:I:1:pos:R:3\n");
 
     for (int i=0; i<numCells; i++)
 	{
@@ -40,7 +40,7 @@ __host__ void tissue_snapshots(Cell *cells, FILE *fSnap, int numCells)
 		float3 r = cell.position;
 
         // Format: state radius x y
-        fprintf(fSnap, "%d %f %f %f %f\n", state, 0.5, r.x, r.y, r.z);
+        fprintf(fSnap, "%d %f %f %f\n", state, r.x, r.y, r.z);
 	}
 }
 
@@ -116,16 +116,18 @@ __global__ void tissue_update(Cell *cells, int numCells,
 			virions = cell->virions <= 0.0f ? -38 : log10(cell->virions);
 			ifn = cell->IFN <= 0.0f ? -38 : log10(cell->IFN);
 			infecProb = sigmoidFun(virions, 2, 3);
-			refracProb = sigmoidFun(ifn, 2, 4);
+			//refracProb = sigmoidFun(ifn, 2, 3);
 
-			if (infecProb > ranUni[ind]) infecFlag = 1;
-			if (refracProb > ranUni[ind]) refracFlag = 1;
+			refracProb = 1 - sigmoidFun(ifn, 2, 3);
+			if (infecProb*refracProb > ranUni[ind]) infecFlag = 1;
+			//if (infecProb > ranUni[ind]) infecFlag = 1;
+			//if (refracProb > ranUni[ind]) refracFlag = 1;
 
-			if (infecFlag && refracFlag)
-			{
-				if (0.5 > ranUni[(ind+1)%ind]) infecFlag = 0;
-				else refracFlag = 0;
-			}
+			//if (infecFlag && refracFlag)
+			//{
+			//	if (ifecProb < refracProb) infecFlag = 0;
+			//	else refracFlag = 0;
+			//}
 
 			if (infecFlag)
 			{
@@ -138,7 +140,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 				break;
 			}
 
-			if (refracFlag) cell->state = REFRACTORY;
+			//if (refracFlag) cell->state = REFRACTORY;
 
 			break;
 
@@ -147,6 +149,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 
 		case INCUBATING:
 			cell->incubationTime--;
+			cell->IFN += IFNproduction;
 			if (cell->incubationTime <= 0)
 				cell->state = EXPRESSING;
 			break;
@@ -193,6 +196,6 @@ __global__ void tissue_infection(Cell *cells, int numCells,
 
 
 	// Update IFN for each cell
-	float diffusedIFN= IFNdiffusion*(meanIFN - cell.IFN);
+	float diffusedIFN = IFNdiffusion*(meanIFN - cell.IFN);
 	cells[ind].IFN = (1.0 - IFNclearance)*(cell.IFN + diffusedIFN);
 }

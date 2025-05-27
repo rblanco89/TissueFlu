@@ -135,17 +135,17 @@ int main(int argc, char *argv[])
 	/*==========================================*/
 
 	int ind;
-	for (int i=0; i<options.numInfections; i++)
-	{
-		do ind = numCells*ranUni.doub(); while (cells[ind].state == INCUBATING);
-		cells[ind].state = INCUBATING;
-		cells[ind].virions = options.initialVirions;
-	}
+	//for (int i=0; i<options.numInfections; i++)
+	//{
+	//	do ind = numCells*ranUni.doub(); while (cells[ind].state == INCUBATING);
+	//	cells[ind].state = INCUBATING;
+	//	cells[ind].virions = options.initialVirions;
+	//}
 
 	// Infecting a central cell of a rectangle tissue
-	//ind = numCells/2 + 99;
-	//cells[ind].state = INCUBATING;
-	//cells[ind].virions = options.initialVirions;
+	ind = numCells/2 + 99;
+	cells[ind].state = INCUBATING;
+	cells[ind].virions = options.initialVirions;
 
 	/*==========================================*/
 	// Initialize files for results
