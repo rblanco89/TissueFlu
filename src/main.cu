@@ -113,6 +113,7 @@ int main(int argc, char *argv[])
 		}
 
 		cells[i].position = r;
+		cells[i].numNeighbors = 0;
 		cells[i].state = HEALTHY;
 		cells[i].virions = 0.0f;
 		cells[i].IFN = 0.0f;
@@ -123,12 +124,6 @@ int main(int argc, char *argv[])
 	fclose(fp);
 
 	printf("Loaded %d cells from %s\n", numCells, structure_file);
-
-	/*==========================================*/
-	// Find neighbors and store in cell structure
-	/*==========================================*/
-
-	build_neighbors(cells, numCells, options.neighRadius);
 
 	/*==========================================*/
 	// Initial infection
@@ -162,13 +157,13 @@ int main(int argc, char *argv[])
 	}
 
 	sprintf(filename, "results/tissueState.csv");
-	FILE *fTissue = fopen(filename, "w");
-	if (!fTissue)
+	FILE *fStat = fopen(filename, "w");
+	if (!fStat)
 	{
 		fprintf(stderr, "Error: could not open %s for writing\n", filename);
 		return 1;
 	}
-	fprintf(fTissue, "Time,ViralLoad,IFN,Health,Refractory,Infected,Dead\n");
+	fprintf(fStat, "Time,ViralLoad,IFN,Health,Refractory,Infected,Dead\n");
 
 	/*==========================================*/
 	// Main loop: Simulation
@@ -178,64 +173,27 @@ int main(int argc, char *argv[])
 	int ths = (numCells < THS_MAX) ? nextPow2(numCells) : THS_MAX;
 	int blks = 1 + (numCells - 1)/ths;
 
-	float viralLoad, IFNlevel;
-	int healthyCells, refractoryCells, infectedCells, deadCells;
-
 	short noPrintFlag, noMeasureFlag;
 	int printStep = 0.01*options.timeSteps;
 	int measureStep = 0.01*options.timeSteps;
 
 	printf("Starting simulation...\n");
 
+	// Find neighbors and store in cell structure
+	build_neighbors<<<blks, ths>>>(cells, numCells, options.neighRadius);
+	cudaDeviceSynchronize();
+
 	for (int step=0; step<options.timeSteps; step++)
 	{
 		noPrintFlag = step%printStep;
 		noMeasureFlag = step%measureStep;
 
-		if (!noPrintFlag) tissue_snapshots(cells, fSnap, numCells);
+		if (!noPrintFlag) print_tissueSnapshots(cells, fSnap, numCells);
 
 		if (!noMeasureFlag)
 		{
 			printf("Step %d/%d\n", step, options.timeSteps);
-			viralLoad = 0.0;
-			IFNlevel = 0.0;
-			healthyCells = 0;
-			refractoryCells = 0;
-			infectedCells = 0;
-			deadCells = 0;
-			for (int i=0; i<numCells; i++)
-			{
-				viralLoad += cells[i].virions;
-				IFNlevel += cells[i].IFN;
-				switch (cells[i].state)
-				{
-					case HEALTHY:
-						healthyCells++;
-						break;
-
-					case REFRACTORY:
-						refractoryCells++;
-						break;
-
-					case INCUBATING:
-						infectedCells++;
-						break;
-
-					case EXPRESSING:
-						infectedCells++;
-						break;
-
-					case DEAD:
-						deadCells++;
-						break;
-
-					default:
-						break;
-				}
-			}
-
-			fprintf(fTissue, "%d,%f,%f,%d,%d,%d,%d\n", step, viralLoad, IFNlevel,
-				healthyCells, refractoryCells, infectedCells, deadCells);
+			print_tissueStatus(cells, fStat, numCells, step);
 		}
 
 		// GPU functions (kernels)
@@ -251,7 +209,7 @@ int main(int argc, char *argv[])
 		cudaDeviceSynchronize();
 	}
 
-	fclose(fTissue);
+	fclose(fStat);
 	fclose(fSnap);
 
 	printf("Simulation completed\n");

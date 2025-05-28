@@ -5,6 +5,11 @@
 #include <math.h>
 #include "headers.h"
 
+// Parameters for the viral production rate (logistic)
+//#define K_V 189.93
+//#define R_V 0.28671
+//#define t0_V 13.25
+
 // ==================================================================
 // HOST FUNCTIONS
 // ==================================================================
@@ -21,8 +26,49 @@ __host__ long nextPow2(long x)
 }
 
 // ==================================================================
+__host__ void print_tissueStatus(Cell *cells, FILE *fStat, int numCells, int step)
+{
+	float viralLoad = 0.0, IFNlevel = 0.0;
+	int healthyCells = 0, refractoryCells = 0,
+		infectedCells = 0, deadCells = 0;
 
-__host__ void tissue_snapshots(Cell *cells, FILE *fSnap, int numCells)
+	for (int i=0; i<numCells; i++)
+	{
+		viralLoad += cells[i].virions;
+		IFNlevel += cells[i].IFN;
+		switch (cells[i].state)
+		{
+			case HEALTHY:
+				healthyCells++;
+				break;
+
+			case REFRACTORY:
+				refractoryCells++;
+				break;
+
+			case INCUBATING:
+				infectedCells++;
+				break;
+
+			case EXPRESSING:
+				infectedCells++;
+				break;
+
+			case DEAD:
+				deadCells++;
+				break;
+
+			default:
+				break;
+		}
+	}
+
+	fprintf(fStat, "%d,%f,%f,%d,%d,%d,%d\n", step, viralLoad, IFNlevel,
+		healthyCells, refractoryCells, infectedCells, deadCells);
+}
+// ==================================================================
+
+__host__ void print_tissueSnapshots(Cell *cells, FILE *fSnap, int numCells)
 {
 	// Define the grid and declare properties
 	fprintf(fSnap, "%d\n", numCells);
@@ -46,52 +92,93 @@ __host__ void tissue_snapshots(Cell *cells, FILE *fSnap, int numCells)
 
 // ==================================================================
 
-__host__ void build_neighbors(Cell *cells, int numCells, float cutoff)
-{
-	for (int i = 0; i < numCells; i++)
-		cells[i].numNeighbors = 0;
-
-	for (int i=0; i<numCells-1; i++)
-		for (int j=i+1; j<numCells; j++)
-		{
-			float3 ri = cells[i].position;
-			float3 rj = cells[j].position;
-
-			float dx = ri.x - rj.x;
-			float dy = ri.y - rj.y;
-			float dz = ri.z - rj.z;
-
-			float dist2 = dx*dx + dy*dy + dz*dz;
-
-			if (dist2 > cutoff*cutoff) continue;
-
-			// Add j to i's neighbor list
-			if (cells[i].numNeighbors < MAX_NEIGHBORS)
-				cells[i].neighbors[cells[i].numNeighbors++] = j;
-			else
-			{
-				fprintf(stderr, "Warning: cell %d neighbor list full\n", i);
-				break;
-			}
-
-			// Add i to j's neighbor list
-			if (cells[j].numNeighbors < MAX_NEIGHBORS)
-				cells[j].neighbors[cells[j].numNeighbors++] = i;
-			else
-			{
-				fprintf(stderr, "Warning: cell %d neighbor list full\n", j);
-				break;
-			}
-		}
-}
+//__host__ void build_neighbors(Cell *cells, int numCells, float cutoff)
+//{
+//	for (int i = 0; i < numCells; i++)
+//		cells[i].numNeighbors = 0;
+//
+//	for (int i=0; i<numCells-1; i++)
+//		for (int j=i+1; j<numCells; j++)
+//		{
+//			float3 ri = cells[i].position;
+//			float3 rj = cells[j].position;
+//
+//			float dx = ri.x - rj.x;
+//			float dy = ri.y - rj.y;
+//			float dz = ri.z - rj.z;
+//
+//			float dist2 = dx*dx + dy*dy + dz*dz;
+//
+//			if (dist2 > cutoff*cutoff) continue;
+//
+//			// Add j to i's neighbor list
+//			if (cells[i].numNeighbors < MAX_NEIGHBORS)
+//				cells[i].neighbors[cells[i].numNeighbors++] = j;
+//			else
+//			{
+//				fprintf(stderr, "Warning: cell %d neighbor list full\n", i);
+//				break;
+//			}
+//
+//			// Add i to j's neighbor list
+//			if (cells[j].numNeighbors < MAX_NEIGHBORS)
+//				cells[j].neighbors[cells[j].numNeighbors++] = i;
+//			else
+//			{
+//				fprintf(stderr, "Warning: cell %d neighbor list full\n", j);
+//				break;
+//			}
+//		}
+//}
 
 // ==================================================================
 // DEVICE FUNCTIONS
 // ==================================================================
 
+// Function to calculate the virion release rate at time t (in hours)
+//double virion_release_rate(double t) {
+//    // Logistic curve derivative
+//    double exponent = exp(-r * (t - t0));
+//    double rate = (K * r * exponent) / pow(1 + exponent, 2);
+//    return rate;
+//}
+
+// ==================================================================
+
 __device__ float sigmoidFun(float x, float A, float K)
 {
 	return 1/(1 + exp(-A*(x-K)));
+}
+
+// ==================================================================
+
+__global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
+{
+	int ind = threadIdx.x + blockIdx.x*blockDim.x;
+	if (ind >= numCells) return;
+
+	for (int ind_j=0; ind_j<numCells; ind_j++)
+	{
+		float3 ri = cells[ind].position;
+		float3 rj = cells[ind_j].position;
+
+		float dx = ri.x - rj.x;
+		float dy = ri.y - rj.y;
+		float dz = ri.z - rj.z;
+
+		float dist2 = dx*dx + dy*dy + dz*dz;
+
+		if (dist2 > cutoff*cutoff) continue;
+
+		// Add j to i's neighbor list
+		if (cells[ind].numNeighbors < MAX_NEIGHBORS)
+			cells[ind].neighbors[cells[ind].numNeighbors++] = ind_j;
+		else
+		{
+			printf("Warning: cell %d neighbor list full\n", ind);
+			break;
+		}
+	}
 }
 
 // ==================================================================

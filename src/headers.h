@@ -53,12 +53,14 @@ Cell;
 
 void parse_options(const char *filename);
 __host__ long nextPow2(long x);
-__host__ void tissue_snapshots(Cell *cells, FILE *fSnap, int numCells);
-__host__ void build_neighbors(Cell *cells, int numCells, float cutoff);
+__host__ void print_tissueSnapshots(Cell *cells, FILE *fSnap, int numCells);
+__host__ void print_tissueStatus(Cell *cells, FILE *fSnap, int numCells, int step);
 
+//__host__ void build_neighbors(Cell *cells, int numCells, float cutoff);
 //__host__ void tissue_update(Cell *cells, int numCells);
 //__host__ void tissue_infection(Cell *cells, int numCells);
 
+__global__ void build_neighbors(Cell *cells, int numCells, float cutoff);
 __global__ void tissue_update(Cell *cells, int numCells, float virionProduction,
 		float IFNproduction, float *d_ranUni);
 __global__ void tissue_infection(Cell *cells, int numCells, float virionDiffusion,
