@@ -178,24 +178,42 @@ __global__ void tissue_infection(Cell *cells, int numCells,
 
 	Cell cell = cells[ind];
 
-	float meanVirions = cell.virions;
-	float meanIFN = cell.IFN;
+	// MODEL 1
+	float diffVirions = -cell.virions*cell.numNeighbors;
+	float diffIFN = -cell.IFN*cell.numNeighbors;
 
 	for (int j=0; j<cell.numNeighbors; j++)
 	{
-		meanVirions += cells[cell.neighbors[j]].virions;
-		meanIFN += cells[cell.neighbors[j]].IFN;
+		diffVirions += cells[cell.neighbors[j]].virions;
+		diffIFN += cells[cell.neighbors[j]].IFN;
 	}
 
-	meanVirions /= cell.numNeighbors + 1;
-	meanIFN /= cell.numNeighbors + 1;
-
 	// Update count of virions for each cell
-	float diffusedVirions = virionDiffusion*(meanVirions - cell.virions);
+	float diffusedVirions = virionDiffusion*diffVirions;
 	cells[ind].virions = (1.0 - virionClearance)*(cell.virions + diffusedVirions);
 
-
 	// Update IFN for each cell
-	float diffusedIFN = IFNdiffusion*(meanIFN - cell.IFN);
+	float diffusedIFN = IFNdiffusion*diffIFN;
 	cells[ind].IFN = (1.0 - IFNclearance)*(cell.IFN + diffusedIFN);
+
+	// MODEL 2 (New Mexico Approach)
+	//float meanVirions = cell.virions;
+	//float meanIFN = cell.IFN;
+
+	//for (int j=0; j<cell.numNeighbors; j++)
+	//{
+	//	meanVirions += cells[cell.neighbors[j]].virions;
+	//	meanIFN += cells[cell.neighbors[j]].IFN;
+	//}
+
+	//meanVirions /= cell.numNeighbors + 1;
+	//meanIFN /= cell.numNeighbors + 1;
+
+	//// Update count of virions for each cell
+	//float diffusedVirions = virionDiffusion*(meanVirions - cell.virions);
+	//cells[ind].virions = (1.0 - virionClearance)*(cell.virions + diffusedVirions);
+
+	//// Update IFN for each cell
+	//float diffusedIFN = IFNdiffusion*(meanIFN - cell.IFN);
+	//cells[ind].IFN = (1.0 - IFNclearance)*(cell.IFN + diffusedIFN);
 }
