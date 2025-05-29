@@ -32,9 +32,9 @@ def main(filename):
     axes[1].set_xlabel('Time (days)')
     axes[1].set_ylabel('Number of Cells')
     axes[1].plot(df['Days'], df['Health'], label='Healthy')
+    axes[1].plot(df['Days'], df['Dead'], label='Dead')
     axes[1].plot(df['Days'], df['Refractory'], label='Refractory')
     axes[1].plot(df['Days'], df['Infected'], label='Infected')
-    axes[1].plot(df['Days'], df['Dead'], label='Dead')
     axes[1].legend()
     axes[1].set_yscale('log')
 
