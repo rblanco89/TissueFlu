@@ -5,11 +5,6 @@
 #include <math.h>
 #include "headers.h"
 
-// Parameters for the viral production rate (logistic)
-//#define K_V 189.93
-//#define R_V 0.28671
-//#define t0_V 13.25
-
 // ==================================================================
 // HOST FUNCTIONS
 // ==================================================================
@@ -26,7 +21,7 @@ __host__ long nextPow2(long x)
 }
 
 // ==================================================================
-__host__ void print_tissueStatus(Cell *cells, FILE *fStat, int numCells, int step)
+__host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fStat)
 {
 	float viralLoad = 0.0, IFNlevel = 0.0;
 	int healthyCells = 0, refractoryCells = 0,
@@ -63,12 +58,12 @@ __host__ void print_tissueStatus(Cell *cells, FILE *fStat, int numCells, int ste
 		}
 	}
 
-	fprintf(fStat, "%d,%f,%f,%d,%d,%d,%d\n", step, viralLoad, IFNlevel,
+	fprintf(fStat, "%d,%e,%e,%d,%d,%d,%d\n", step, viralLoad, IFNlevel,
 		healthyCells, refractoryCells, infectedCells, deadCells);
 }
 // ==================================================================
 
-__host__ void print_tissueSnapshots(Cell *cells, FILE *fSnap, int numCells)
+__host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap)
 {
 	// Define the grid and declare properties
 	fprintf(fSnap, "%d\n", numCells);
@@ -135,13 +130,20 @@ __host__ void print_tissueSnapshots(Cell *cells, FILE *fSnap, int numCells)
 // DEVICE FUNCTIONS
 // ==================================================================
 
-// Function to calculate the virion release rate at time t (in hours)
-//double virion_release_rate(double t) {
-//    // Logistic curve derivative
-//    double exponent = exp(-r * (t - t0));
-//    double rate = (K * r * exponent) / pow(1 + exponent, 2);
-//    return rate;
-//}
+// Function to calculate the virion release rate at time t (in min)
+__device__ float virionRelease(int time)
+{
+	// Parameters for the viral production rate (logistic)
+	float K = 15000.0;
+	float r = 0.004;
+	float t0 = 315.0; //(13.25 hrs)
+	float t = time; 
+	
+	// Logistic curve derivative
+	float exponent = exp(-r*(t - t0));
+
+	return (K*r*exponent) / pow(1 + exponent, 2);
+}
 
 // ==================================================================
 
@@ -157,28 +159,45 @@ __global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
 
+	float3 ri, rj, dr;
+	float dist2;
+	int numNeighbors = 0;
+
 	for (int ind_j=0; ind_j<numCells; ind_j++)
 	{
-		float3 ri = cells[ind].position;
-		float3 rj = cells[ind_j].position;
+		if (ind == ind_j) continue;
 
-		float dx = ri.x - rj.x;
-		float dy = ri.y - rj.y;
-		float dz = ri.z - rj.z;
+		ri = cells[ind].position;
+		rj = cells[ind_j].position;
 
-		float dist2 = dx*dx + dy*dy + dz*dz;
+		dr.x = ri.x - rj.x;
+		dr.y = ri.y - rj.y;
+		dr.z = ri.z - rj.z;
+
+		dist2 = dr.x*dr.x + dr.y*dr.y + dr.z*dr.z;
 
 		if (dist2 > cutoff*cutoff) continue;
+		if (dist2 == 0.0f)
+		{
+			printf("Warning: cell %d and cell %d are at the same position\n", ind, ind_j);
+			break;
+		}
 
 		// Add j to i's neighbor list
-		if (cells[ind].numNeighbors < MAX_NEIGHBORS)
-			cells[ind].neighbors[cells[ind].numNeighbors++] = ind_j;
+		if (numNeighbors < MAX_NEIGHBORS)
+		{
+			cells[ind].neighbors[numNeighbors] = ind_j;
+			cells[ind].neighDist2[numNeighbors] = dist2;
+			numNeighbors++;
+		}
 		else
 		{
 			printf("Warning: cell %d neighbor list full\n", ind);
 			break;
 		}
 	}
+
+	cells[ind].numNeighbors = numNeighbors;
 }
 
 // ==================================================================
@@ -203,18 +222,20 @@ __global__ void tissue_update(Cell *cells, int numCells,
 			virions = cell->virions <= 0.0f ? -38 : log10(cell->virions);
 			ifn = cell->IFN <= 0.0f ? -38 : log10(cell->IFN);
 			infecProb = sigmoidFun(virions, 2, 3);
-			//refracProb = sigmoidFun(ifn, 2, 3);
+			refracProb = sigmoidFun(ifn, 2, 3);
 
-			refracProb = 1 - sigmoidFun(ifn, 2, 3);
-			if (infecProb*refracProb > ranUni[ind]) infecFlag = 1;
+			//refracProb = 1 - sigmoidFun(ifn, 2, 3);
+			if (infecProb*(1.0f-refracProb) > ranUni[ind]) infecFlag = 1;
 			//if (infecProb > ranUni[ind]) infecFlag = 1;
-			//if (refracProb > ranUni[ind]) refracFlag = 1;
 
-			//if (infecFlag && refracFlag)
-			//{
-			//	if (ifecProb < refracProb) infecFlag = 0;
-			//	else refracFlag = 0;
-			//}
+			refracProb = sigmoidFun(ifn, 2, 4);
+			if (refracProb > ranUni[ind]) refracFlag = 1;
+
+			if (infecFlag && refracFlag)
+			{
+				if (infecProb < refracProb) infecFlag = 0;
+				else refracFlag = 0;
+			}
 
 			if (infecFlag)
 			{
@@ -227,7 +248,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 				break;
 			}
 
-			//if (refracFlag) cell->state = REFRACTORY;
+			if (refracFlag) cell->state = REFRACTORY;
 
 			break;
 
@@ -236,14 +257,14 @@ __global__ void tissue_update(Cell *cells, int numCells,
 
 		case INCUBATING:
 			cell->incubationTime--;
-			cell->IFN += IFNproduction;
+			//cell->IFN += IFNproduction;
 			if (cell->incubationTime <= 0)
 				cell->state = EXPRESSING;
 			break;
 
 		case EXPRESSING:
 			cell->expressingTime--;
-			cell->virions += virionProduction;
+			cell->virions += virionRelease(cell->internalTime++);
 			cell->IFN += IFNproduction;
 			if (cell->expressingTime <= 0)
 				cell->state = DEAD;
@@ -266,13 +287,16 @@ __global__ void tissue_infection(Cell *cells, int numCells,
 	Cell cell = cells[ind];
 
 	// MODEL 1
-	float diffVirions = -cell.virions*cell.numNeighbors;
-	float diffIFN = -cell.IFN*cell.numNeighbors;
+	float diffVirions = 0.0;
+	float diffIFN = 0.0;
 
 	for (int j=0; j<cell.numNeighbors; j++)
 	{
-		diffVirions += cells[cell.neighbors[j]].virions;
-		diffIFN += cells[cell.neighbors[j]].IFN;
+		int ind_j = cell.neighbors[j];
+		float dist2 = cell.neighDist2[j];
+
+		diffVirions += (cells[ind_j].virions - cell.virions) / dist2;
+		diffIFN += (cells[ind_j].IFN - cell.IFN) / dist2;
 	}
 
 	// Update count of virions for each cell

@@ -119,6 +119,7 @@ int main(int argc, char *argv[])
 		cells[i].IFN = 0.0f;
 		cells[i].incubationTime = ranIncubation.dev();
 		cells[i].expressingTime = ranExpressing.dev();
+		cells[i].internalTime = 0;
 	}
 
 	fclose(fp);
@@ -165,6 +166,15 @@ int main(int argc, char *argv[])
 	}
 	fprintf(fStat, "Time,ViralLoad,IFN,Health,Refractory,Infected,Dead\n");
 
+	sprintf(filename, "results/cellState.csv");
+	FILE *fCell = fopen(filename, "w");
+	if (!fCell)
+	{
+		fprintf(stderr, "Error: could not open %s for writing\n", filename);
+		return 1;
+	}
+	fprintf(fCell, "Time,ViralLoad,IFN,Health,Refractory,Infected,Dead\n");
+
 	/*==========================================*/
 	// Main loop: Simulation
 	/*==========================================*/
@@ -174,26 +184,29 @@ int main(int argc, char *argv[])
 	int blks = 1 + (numCells - 1)/ths;
 
 	short noPrintFlag, noMeasureFlag;
-	int printStep = 0.01*options.timeSteps;
-	int measureStep = 0.01*options.timeSteps;
+	int printStep = 0.005*options.timeSteps;
+	int measureStep = 0.005*options.timeSteps;
 
-	printf("Starting simulation...\n");
+	printf("Creating list of neighbors...\n");
 
 	// Find neighbors and store in cell structure
 	build_neighbors<<<blks, ths>>>(cells, numCells, options.neighRadius);
 	cudaDeviceSynchronize();
+
+	printf("Starting simulation...\n");
 
 	for (int step=0; step<options.timeSteps; step++)
 	{
 		noPrintFlag = step%printStep;
 		noMeasureFlag = step%measureStep;
 
-		if (!noPrintFlag) print_tissueSnapshots(cells, fSnap, numCells);
+		if (!noPrintFlag) print_tissueSnapshots(cells, numCells, fSnap);
 
 		if (!noMeasureFlag)
 		{
 			printf("Step %d/%d\n", step, options.timeSteps);
-			print_tissueStatus(cells, fStat, numCells, step);
+			print_tissueStatus(cells, numCells, step, fStat);
+			fprintf(fCell, "%d,%f\n", step, cells[ind].virions);
 		}
 
 		// GPU functions (kernels)
@@ -211,6 +224,7 @@ int main(int argc, char *argv[])
 
 	fclose(fStat);
 	fclose(fSnap);
+	fclose(fCell);
 
 	printf("Simulation completed\n");
 
