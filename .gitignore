@@ -2,3 +2,4 @@
 *.xyz
 *.ipynb_checkpoints
 aeroflu
+results/*
