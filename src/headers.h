@@ -10,8 +10,8 @@ typedef struct
 	int ranSeed;
 
 	float neighRadius;
+	float intrinRefracProb;
 	float initialVirions;
-	float virionProduction;
 	float virionDiffusion;
 	float virionClearance;
 	float IFNproduction;
@@ -63,7 +63,7 @@ __host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fSta
 //__host__ void tissue_infection(Cell *cells, int numCells);
 
 __global__ void build_neighbors(Cell *cells, int numCells, float cutoff);
-__global__ void tissue_update(Cell *cells, int numCells, float virionProduction,
+__global__ void tissue_update(Cell *cells, int numCells, 
 		float IFNproduction, float *d_ranUni);
 __global__ void tissue_infection(Cell *cells, int numCells, float virionDiffusion,
 		float virionClearance, float IFNdiffusion, float IFNclearance);

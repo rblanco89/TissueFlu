@@ -203,7 +203,7 @@ __global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 // ==================================================================
 
 __global__ void tissue_update(Cell *cells, int numCells,
-							  float virionProduction, float IFNproduction,
+							  float IFNproduction,
 							  float *ranUni)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
@@ -221,12 +221,11 @@ __global__ void tissue_update(Cell *cells, int numCells,
 
 			virions = cell->virions <= 0.0f ? -38 : log10(cell->virions);
 			ifn = cell->IFN <= 0.0f ? -38 : log10(cell->IFN);
-			infecProb = sigmoidFun(virions, 2, 3);
-			refracProb = sigmoidFun(ifn, 2, 3);
 
-			//refracProb = 1 - sigmoidFun(ifn, 2, 3);
-			if (infecProb*(1.0f-refracProb) > ranUni[ind]) infecFlag = 1;
-			//if (infecProb > ranUni[ind]) infecFlag = 1;
+			infecProb = sigmoidFun(virions, 2, 3);
+			if (infecProb > ranUni[ind]) infecFlag = 1;
+			//refracProb = sigmoidFun(ifn, 2, 3);
+			//if (infecProb*(1.0f-refracProb) > ranUni[ind]) infecFlag = 1;
 
 			refracProb = sigmoidFun(ifn, 2, 4);
 			if (refracProb > ranUni[ind]) refracFlag = 1;
@@ -240,11 +239,6 @@ __global__ void tissue_update(Cell *cells, int numCells,
 			if (infecFlag)
 			{
 				cell->state = INCUBATING;
-			
-				// Randomly protect a percentage of cell (fake refractory state)
-				//if (0.2 > ranUni[(ind+1)%ind]) cell->state = REFRACTORY;
-				//else cell->state = INCUBATING;
-
 				break;
 			}
 
@@ -257,7 +251,6 @@ __global__ void tissue_update(Cell *cells, int numCells,
 
 		case INCUBATING:
 			cell->incubationTime--;
-			//cell->IFN += IFNproduction;
 			if (cell->incubationTime <= 0)
 				cell->state = EXPRESSING;
 			break;

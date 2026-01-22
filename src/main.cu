@@ -112,9 +112,11 @@ int main(int argc, char *argv[])
 			break;
 		}
 
+		if (ranUni.doub() < options.intrinRefracProb) cells[i].state = REFRACTORY;
+		else cells[i].state = HEALTHY;
+
 		cells[i].position = r;
 		cells[i].numNeighbors = 0;
-		cells[i].state = HEALTHY;
 		cells[i].virions = 0.0f;
 		cells[i].IFN = 0.0f;
 		cells[i].incubationTime = ranIncubation.dev();
@@ -133,13 +135,15 @@ int main(int argc, char *argv[])
 	int ind;
 	for (int i=0; i<options.numInfections; i++)
 	{
-		do ind = numCells*ranUni.doub(); while (cells[ind].state == INCUBATING);
+		do ind = numCells*ranUni.doub();
+		while (cells[ind].state == INCUBATING || cells[ind].state == REFRACTORY);
+
 		cells[ind].state = INCUBATING;
 		cells[ind].virions = options.initialVirions;
 	}
 
 	// Infecting a central cell of a rectangle tissue
-	//ind = numCells/2 + 99;
+	//ind = numCells/2 + 149;
 	//cells[ind].state = INCUBATING;
 	//cells[ind].virions = options.initialVirions;
 
@@ -173,7 +177,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Error: could not open %s for writing\n", filename);
 		return 1;
 	}
-	fprintf(fCell, "Time,ViralLoad,IFN,Health,Refractory,Infected,Dead\n");
+	fprintf(fCell, "Time,ViralLoad\n");
 
 	/*==========================================*/
 	// Main loop: Simulation
@@ -214,7 +218,7 @@ int main(int argc, char *argv[])
 		// Generate random numbers and then update positions
 		curandGenerateUniform(gen, d_ranUni, numCells);
 
-		tissue_update<<<blks, ths>>>(cells, numCells, options.virionProduction, options.IFNproduction,
+		tissue_update<<<blks, ths>>>(cells, numCells, options.IFNproduction,
 			d_ranUni);
 		tissue_infection<<<blks, ths>>>(cells, numCells, options.virionDiffusion,  options.virionClearance,
 			options.IFNdiffusion, options.IFNclearance);

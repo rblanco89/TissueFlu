@@ -14,7 +14,6 @@ def main(filename):
 
     # Plot 1: Viral Load and IFN
     ax1 = axes[0]
-    ax1.set_title('Viral Load and IFN over Time')
     ax1.set_xlabel('Time (days)')
     ax1.set_ylabel('Viral Load', color='tab:red')
     ax1.plot(df['Days'], df['ViralLoad'], color='tab:red', label='Viral Load')
@@ -28,7 +27,6 @@ def main(filename):
     ax2.set_yscale('log')
 
     # Plot 2: Cell States
-    axes[1].set_title('Cell States over Time')
     axes[1].set_xlabel('Time (days)')
     axes[1].set_ylabel('Number of Cells')
     axes[1].plot(df['Days'], df['Health'], label='Healthy')
