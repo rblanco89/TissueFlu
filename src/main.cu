@@ -112,8 +112,8 @@ int main(int argc, char *argv[])
 			break;
 		}
 
-		if (ranUni.doub() < options.intrinRefracProb) cells[i].state = REFRACTORY;
-		else cells[i].state = HEALTHY;
+		if (ranUni.doub() < options.nonPermProb) cells[i].state = NONPERMISSIVE;
+		else cells[i].state = SUSCEPTIBLE;
 
 		cells[i].position = r;
 		cells[i].numNeighbors = 0;
@@ -136,7 +136,7 @@ int main(int argc, char *argv[])
 	for (int i=0; i<options.numInfections; i++)
 	{
 		do ind = numCells*ranUni.doub();
-		while (cells[ind].state == INCUBATING || cells[ind].state == REFRACTORY);
+		while (cells[ind].state == INCUBATING || cells[ind].state == NONPERMISSIVE);
 
 		cells[ind].state = INCUBATING;
 		cells[ind].virions = options.initialVirions;
@@ -168,7 +168,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Error: could not open %s for writing\n", filename);
 		return 1;
 	}
-	fprintf(fStat, "Time,ViralLoad,IFN,Health,Refractory,Infected,Dead\n");
+	fprintf(fStat, "Time,ViralLoad,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive\n");
 
 	sprintf(filename, "results/cellState.csv");
 	FILE *fCell = fopen(filename, "w");

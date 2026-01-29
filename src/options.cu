@@ -37,8 +37,8 @@ void parse_options(const char *filename)
 
 			else if (strcmp(key, "neighRadius ") == 0)
 				options.neighRadius = atof(value);
-			else if (strcmp(key, "intrinRefracProbability ") == 0)
-				options.intrinRefracProb = atof(value);
+			else if (strcmp(key, "nonPermissiveProbability ") == 0)
+				options.nonPermProb = atof(value);
 			else if (strcmp(key, "initialVirions ") == 0)
 				options.initialVirions = atof(value);
 			else if (strcmp(key, "virionDiffusion ") == 0)

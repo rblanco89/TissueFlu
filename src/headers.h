@@ -10,7 +10,7 @@ typedef struct
 	int ranSeed;
 
 	float neighRadius;
-	float intrinRefracProb;
+	float nonPermProb;
 	float initialVirions;
 	float virionDiffusion;
 	float virionClearance;
@@ -24,10 +24,12 @@ extern Options options;
 
 typedef enum
 {
-	HEALTHY,
-	REFRACTORY,
+	NONPERMISSIVE,
+	SUSCEPTIBLE,
 	INCUBATING,
-	EXPRESSING,
+	INFECTED_MINUS,
+	INFECTED_PLUS,
+	REFRACTORY,
 	DEAD
 }
 CellState;

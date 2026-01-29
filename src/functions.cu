@@ -24,8 +24,7 @@ __host__ long nextPow2(long x)
 __host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fStat)
 {
 	float viralLoad = 0.0, IFNlevel = 0.0;
-	int healthyCells = 0, refractoryCells = 0,
-		infectedCells = 0, deadCells = 0;
+	int npCells = 0, sCells = 0, rCells = 0, iCells = 0, dCells = 0;
 
 	for (int i=0; i<numCells; i++)
 	{
@@ -33,24 +32,32 @@ __host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fSta
 		IFNlevel += cells[i].IFN;
 		switch (cells[i].state)
 		{
-			case HEALTHY:
-				healthyCells++;
+			case NONPERMISSIVE:
+				npCells++;
+				break;
+
+			case SUSCEPTIBLE:
+				sCells++;
 				break;
 
 			case REFRACTORY:
-				refractoryCells++;
+				rCells++;
 				break;
 
 			case INCUBATING:
-				infectedCells++;
+				iCells++;
 				break;
 
-			case EXPRESSING:
-				infectedCells++;
+			case INFECTED_MINUS:
+				iCells++;
+				break;
+
+			case INFECTED_PLUS:
+				iCells++;
 				break;
 
 			case DEAD:
-				deadCells++;
+				dCells++;
 				break;
 
 			default:
@@ -58,8 +65,8 @@ __host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fSta
 		}
 	}
 
-	fprintf(fStat, "%d,%e,%e,%d,%d,%d,%d\n", step, viralLoad, IFNlevel,
-		healthyCells, refractoryCells, infectedCells, deadCells);
+	fprintf(fStat, "%d,%e,%e,%d,%d,%d,%d,%d\n", step, viralLoad, IFNlevel,
+		sCells, rCells, iCells, dCells, npCells);
 }
 // ==================================================================
 
