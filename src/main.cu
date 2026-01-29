@@ -118,6 +118,7 @@ int main(int argc, char *argv[])
 		cells[i].position = r;
 		cells[i].numNeighbors = 0;
 		cells[i].virions = 0.0f;
+		cells[i].releasedVirions = 0.0f;
 		cells[i].IFN = 0.0f;
 		cells[i].incubationTime = ranIncubation.dev();
 		cells[i].expressingTime = ranExpressing.dev();
@@ -133,18 +134,18 @@ int main(int argc, char *argv[])
 	/*==========================================*/
 
 	int ind;
-	for (int i=0; i<options.numInfections; i++)
-	{
-		do ind = numCells*ranUni.doub();
-		while (cells[ind].state == INCUBATING || cells[ind].state == NONPERMISSIVE);
+	//for (int i=0; i<options.numInfections; i++)
+	//{
+	//	do ind = numCells*ranUni.doub();
+	//	while (cells[ind].state == INCUBATING || cells[ind].state == NONPERMISSIVE);
 
-		cells[ind].state = INCUBATING;
-		cells[ind].virions = options.initialVirions;
-	}
+	//	cells[ind].state = INCUBATING;
+	//	cells[ind].virions = options.initialVirions;
+	//}
 
 	// Infecting a central cell of a rectangle tissue
-	//ind = numCells/2 + 149;
-	//cells[ind].state = INCUBATING;
+	ind = numCells/2 + 149;
+	cells[ind].state = INFECTED_PLUS;
 	//cells[ind].virions = options.initialVirions;
 
 	/*==========================================*/
@@ -177,7 +178,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Error: could not open %s for writing\n", filename);
 		return 1;
 	}
-	fprintf(fCell, "Time,ViralLoad\n");
+	fprintf(fCell, "Time,ViralLoad,IFN\n");
 
 	/*==========================================*/
 	// Main loop: Simulation
@@ -210,7 +211,7 @@ int main(int argc, char *argv[])
 		{
 			printf("Step %d/%d\n", step, options.timeSteps);
 			print_tissueStatus(cells, numCells, step, fStat);
-			fprintf(fCell, "%d,%f\n", step, cells[ind].virions);
+			fprintf(fCell, "%d,%f,%f\n", step, cells[ind].virions, cells[ind].IFN);
 		}
 
 		// GPU functions (kernels)
@@ -218,9 +219,8 @@ int main(int argc, char *argv[])
 		// Generate random numbers and then update positions
 		curandGenerateUniform(gen, d_ranUni, numCells);
 
-		tissue_update<<<blks, ths>>>(cells, numCells, options.IFNproduction,
-			d_ranUni);
-		tissue_infection<<<blks, ths>>>(cells, numCells, options.virionDiffusion,  options.virionClearance,
+		tissue_update<<<blks, ths>>>(cells, numCells, options.IFNcellProb, d_ranUni);
+		tissue_diffusion<<<blks, ths>>>(cells, numCells, options.virionDiffusion,  options.virionClearance,
 			options.IFNdiffusion, options.IFNclearance);
 
 		cudaDeviceSynchronize();
@@ -235,6 +235,7 @@ int main(int argc, char *argv[])
 
 	// Clean up
 	cudaFree(cells);
+	cudaFree(d_ranUni);
 
 	return 0;
 }

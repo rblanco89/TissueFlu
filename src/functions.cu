@@ -137,30 +137,6 @@ __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap)
 // DEVICE FUNCTIONS
 // ==================================================================
 
-// Function to calculate the virion release rate at time t (in min)
-__device__ float virionRelease(int time)
-{
-	// Parameters for the viral production rate (logistic)
-	float K = 15000.0;
-	float r = 0.004;
-	float t0 = 315.0; //(13.25 hrs)
-	float t = time; 
-	
-	// Logistic curve derivative
-	float exponent = exp(-r*(t - t0));
-
-	return (K*r*exponent) / pow(1 + exponent, 2);
-}
-
-// ==================================================================
-
-__device__ float sigmoidFun(float x, float A, float K)
-{
-	return 1/(1 + exp(-A*(x-K)));
-}
-
-// ==================================================================
-
 __global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
@@ -209,63 +185,115 @@ __global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 
 // ==================================================================
 
+__device__ float sigmoidFun(float x, float A, float K)
+{
+	return 1/(1 + exp(-A*(x-K)));
+}
+
+// ==================================================================
+
+__device__ float virionProduction(int time)
+{
+	// Parameters for the viral production rate (logistic)
+	float K = 15164.4633;
+	float r = 0.003526249; // (min^-1)
+	float t0 = 895.782372; // (~15 hrs)
+	float t = time; 
+	
+	// Logistic curve derivative
+	float exponent = exp(-r*(t - t0));
+
+	return (K*r*exponent) / pow(1 + exponent, 2);
+}
+
+// ==================================================================
+
+__device__ float ifnProduction(float virions)
+{
+    const float pfMax = 0.25f;     // max IFN production rate (IFN units / min / cell)
+    const float Kf    = 7582.23165;   // half-max at virions = Kf  (virions)
+    const float n     = 2.0f;     // Hill coefficient (2–4 typical)
+
+    // Hill function (stable form)
+    // pF = pFmax * S^n / (K^n + S^n)
+    float Sn = powf(virions, n);
+    float Kn = powf(Kf, n);
+
+    return pfMax * (Sn / (Kn + Sn));
+}
+
+// ==================================================================
+
 __global__ void tissue_update(Cell *cells, int numCells,
-							  float IFNproduction,
-							  float *ranUni)
+							  float IFNcellProb, float *ranUni)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
 
-	short infecFlag = 0, refracFlag = 0;
-	float virions, ifn;
-	float infecProb, refracProb;
+	//short infecFlag = 0, refracFlag = 0;
+	float virions;
+	float infecProb, effInfProb, refracProb;
 	Cell *cell = &cells[ind];
 	switch (cell->state)
 	{
-		case HEALTHY:
-			//infecProb = 0.001*cell->virions;
-			//refracProb = 0.001*cell->IFN;
+		case NONPERMISSIVE:
+			refracProb = sigmoidFun(cell->IFN, 6, 1);
+			if (refracProb > ranUni[ind]) cell->state = REFRACTORY;
+			break;
 
-			virions = cell->virions <= 0.0f ? -38 : log10(cell->virions);
-			ifn = cell->IFN <= 0.0f ? -38 : log10(cell->IFN);
-
-			infecProb = sigmoidFun(virions, 2, 3);
-			if (infecProb > ranUni[ind]) infecFlag = 1;
-			//refracProb = sigmoidFun(ifn, 2, 3);
-			//if (infecProb*(1.0f-refracProb) > ranUni[ind]) infecFlag = 1;
-
-			refracProb = sigmoidFun(ifn, 2, 4);
-			if (refracProb > ranUni[ind]) refracFlag = 1;
-
-			if (infecFlag && refracFlag)
+		case SUSCEPTIBLE:
+			refracProb = sigmoidFun(cell->IFN, 6, 1);
+			if (refracProb > ranUni[ind])
 			{
-				if (infecProb < refracProb) infecFlag = 0;
-				else refracFlag = 0;
-			}
-
-			if (infecFlag)
-			{
-				cell->state = INCUBATING;
+				cell->state = REFRACTORY;
 				break;
 			}
 
-			if (refracFlag) cell->state = REFRACTORY;
+			virions = log10(cell->virions + 1.0f);
+			infecProb = sigmoidFun(virions, 2, 3);
+			//if (infecProb > ranUni[ind]) infecFlag = 1;
+			effInfProb = infecProb*(1.0f-refracProb);
+			if (effInfProb > ranUni[(ind+1)%numCells])
+				cell->state = INCUBATING;
 
-			break;
+			//if (infecFlag && refracFlag)
+			//{
+			//	if (infecProb < refracProb) infecFlag = 0;
+			//	else refracFlag = 0;
+			//}
 
-		case REFRACTORY:
+			//if (infecFlag)
+			//{
+			//	cell->state = INCUBATING;
+			//	break;
+			//}
+
+			//if (refracFlag) 
+			//	cell->state = REFRACTORY;
+
 			break;
 
 		case INCUBATING:
 			cell->incubationTime--;
 			if (cell->incubationTime <= 0)
-				cell->state = EXPRESSING;
+				if (ranUni[ind] < IFNcellProb)
+					cell->state = INFECTED_PLUS;
+				else cell->state = INFECTED_MINUS;
 			break;
 
-		case EXPRESSING:
+		case INFECTED_PLUS:
 			cell->expressingTime--;
-			cell->virions += virionRelease(cell->internalTime++);
-			cell->IFN += IFNproduction;
+			virions = virionProduction(cell->internalTime++);
+			cell->virions += virions; // virus field (virions * dt)
+			cell->releasedVirions += virions; // cumulative virions
+			cell->IFN += ifnProduction(cell->releasedVirions); // (ifnP * dt)
+			if (cell->expressingTime <= 0)
+				cell->state = DEAD;
+			break;
+
+		case INFECTED_MINUS:
+			cell->expressingTime--;
+			cell->virions += virionProduction(cell->internalTime++);
 			if (cell->expressingTime <= 0)
 				cell->state = DEAD;
 			break;
@@ -277,7 +305,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 
 // ==================================================================
 
-__global__ void tissue_infection(Cell *cells, int numCells,
+__global__ void tissue_diffusion(Cell *cells, int numCells,
 								 float virionDiffusion, float virionClearance,
 								 float IFNdiffusion, float IFNclearance)
 {

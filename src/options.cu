@@ -45,8 +45,8 @@ void parse_options(const char *filename)
 				options.virionDiffusion = atof(value);
 			else if (strcmp(key, "virionClearance ") == 0)
 				options.virionClearance = atof(value);
-			else if (strcmp(key, "IFNproduction ") == 0)
-				options.IFNproduction = atof(value);
+			else if (strcmp(key, "IFNcellProbability ") == 0)
+				options.IFNcellProb = atof(value);
 			else if (strcmp(key, "IFNdiffusion ") == 0)
 				options.IFNdiffusion = atof(value);
 			else if (strcmp(key, "IFNclearance ") == 0)

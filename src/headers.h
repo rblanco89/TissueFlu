@@ -14,7 +14,7 @@ typedef struct
 	float initialVirions;
 	float virionDiffusion;
 	float virionClearance;
-	float IFNproduction;
+	float IFNcellProb;
 	float IFNdiffusion;
 	float IFNclearance;
 }
@@ -43,6 +43,7 @@ typedef struct
 	int expressingTime;
 	int internalTime;
 	float virions;
+	float releasedVirions;
 	float IFN;
 
 	int numNeighbors;
@@ -65,7 +66,6 @@ __host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fSta
 //__host__ void tissue_infection(Cell *cells, int numCells);
 
 __global__ void build_neighbors(Cell *cells, int numCells, float cutoff);
-__global__ void tissue_update(Cell *cells, int numCells, 
-		float IFNproduction, float *d_ranUni);
-__global__ void tissue_infection(Cell *cells, int numCells, float virionDiffusion,
+__global__ void tissue_update(Cell *cells, int numCells, float IFNcellProb, float *d_ranUni);
+__global__ void tissue_diffusion(Cell *cells, int numCells, float virionDiffusion,
 		float virionClearance, float IFNdiffusion, float IFNclearance);
