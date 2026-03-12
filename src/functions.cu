@@ -237,12 +237,12 @@ __global__ void tissue_update(Cell *cells, int numCells,
 	switch (cell->state)
 	{
 		case NONPERMISSIVE:
-			refracProb = sigmoidFun(cell->IFN, 6, 1);
+			refracProb = sigmoidFun(cell->IFN, 6, 0.75);
 			if (refracProb > ranUni[ind]) cell->state = REFRACTORY;
 			break;
 
 		case SUSCEPTIBLE:
-			refracProb = sigmoidFun(cell->IFN, 6, 1);
+			refracProb = sigmoidFun(cell->IFN, 6, 0.75);
 			if (refracProb > ranUni[ind])
 			{
 				cell->state = REFRACTORY;
@@ -250,7 +250,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 			}
 
 			virions = log10(cell->virions + 1.0f);
-			infecProb = sigmoidFun(virions, 2, 3);
+			infecProb = sigmoidFun(virions, 2, 2);
 			//if (infecProb > ranUni[ind]) infecFlag = 1;
 			effInfProb = infecProb*(1.0f-refracProb);
 			if (effInfProb > ranUni[(ind+1)%numCells])
