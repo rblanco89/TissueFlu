@@ -44,10 +44,6 @@ __host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fSta
 				rCells++;
 				break;
 
-			case INCUBATING:
-				iCells++;
-				break;
-
 			case INFECTED_MINUS:
 				iCells++;
 				break;
@@ -190,36 +186,51 @@ __device__ float sigmoidFun(float x, float A, float K)
 	return 1/(1 + exp(-A*(x-K)));
 }
 
-// ==================================================================
-
-__device__ float virionProduction(int time)
+__device__ float hillFun(float x, float K, float n)
 {
-	// Parameters for the viral production rate (logistic)
-	float K = 15164.4633;
-	float r = 0.003526249; // (min^-1)
-	float t0 = 895.782372; // (~15 hrs)
-	float t = time; 
-	
-	// Logistic curve derivative
-	float exponent = exp(-r*(t - t0));
-
-	return (K*r*exponent) / pow(1 + exponent, 2);
+    float xn = powf(x, n);
+    float Kn = powf(K, n);
+    return xn / (Kn + xn);
 }
 
 // ==================================================================
 
-__device__ float ifnProduction(float virions)
+__device__ float virionProduction(int time)
 {
-    const float pfMax = 0.25f;     // max IFN production rate (IFN units / min / cell)
-    const float Kf    = 7582.23165;   // half-max at virions = Kf  (virions)
-    const float n     = 2.0f;     // Hill coefficient (2–4 typical)
+	const float A  = 17783.4953f;    // max cumulative virions
+    const float K  = 16.1392f * 60; // half-max time: 16.14 hrs -> 968.35 min
+    const float n  = 2.3613f;        // Hill coefficient
+
+    float t  = (float)time;
+    float Kn = powf(K, n);
+    float tn = powf(t, n);
+
+    // Derivative of Hill function: dH/dt
+    return A * n * Kn * powf(t, n - 1.0f) / powf(Kn + tn, 2.0f);
+}
+
+// ==================================================================
+
+__device__ float ifnProduction(float dsRNA)
+{
+    // const float pfMax = 0.25f;     // max IFN production rate (IFN units / min / cell)
+    // const float Kf    = 7582.23165;   // half-max at virions = Kf  (virions)
+    // const float n     = 2.0f;     // Hill coefficient (2–4 typical)
 
     // Hill function (stable form)
     // pF = pFmax * S^n / (K^n + S^n)
-    float Sn = powf(virions, n);
-    float Kn = powf(Kf, n);
+    // float Sn = powf(virions, n);
+    // float Kn = powf(Kf, n);
 
-    return pfMax * (Sn / (Kn + Sn));
+    // return pfMax * (Sn / (Kn + Sn));
+
+	const float pFmax = 0.25f;     // max IFN production rate (IFN units / min / cell)
+    const float K_dsRNA    = 1.0;   // half-max at dsRNA (dsRNA units)
+	const float n     = 2.0f;     // Hill coefficient (2–4 typical)
+
+	float dsRNA_n = powf(dsRNA, n);
+	float K_n     = powf(K_dsRNA, n);
+	return pFmax * (dsRNA_n / (K_n + dsRNA_n));
 }
 
 // ==================================================================
@@ -230,19 +241,21 @@ __global__ void tissue_update(Cell *cells, int numCells,
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
 
-	//short infecFlag = 0, refracFlag = 0;
-	float virions;
-	float infecProb, effInfProb, refracProb;
+	float IFNref = 1.0f;
+	float k_syn = 0.1f; // dsRNA synthesis rate (dsRNA units / min / cell)
+	float k_deg = 0.01f; // dsRNA degradation rate (min^-1)
+
+	float virions, refracProb, infecProb, suppProb, effInfProb;
 	Cell *cell = &cells[ind];
 	switch (cell->state)
 	{
 		case NONPERMISSIVE:
-			refracProb = sigmoidFun(cell->IFN, 6, 0.75);
+			refracProb = sigmoidFun(cell->IFN/IFNref, 6, 0.75);
 			if (refracProb > ranUni[ind]) cell->state = REFRACTORY;
 			break;
 
 		case SUSCEPTIBLE:
-			refracProb = sigmoidFun(cell->IFN, 6, 0.75);
+			refracProb = sigmoidFun(cell->IFN/IFNref, 6, 0.75); // refractory mechanism
 			if (refracProb > ranUni[ind])
 			{
 				cell->state = REFRACTORY;
@@ -251,50 +264,31 @@ __global__ void tissue_update(Cell *cells, int numCells,
 
 			virions = log10(cell->virions + 1.0f);
 			infecProb = sigmoidFun(virions, 2, 2);
-			//if (infecProb > ranUni[ind]) infecFlag = 1;
-			effInfProb = infecProb*(1.0f-refracProb);
+			suppProb = 1.0 - sigmoidFun(cell->IFN/IFNref, 3, 0.5); // Suppresion mechanism
+			effInfProb = infecProb * suppProb * (1.0 - refracProb);
+			effInfProb = 0.0f; // CHECK: THIS IS INFECTED WITH NO VIRIONS
 			if (effInfProb > ranUni[(ind+1)%numCells])
-				cell->state = INCUBATING;
-
-			//if (infecFlag && refracFlag)
-			//{
-			//	if (infecProb < refracProb) infecFlag = 0;
-			//	else refracFlag = 0;
-			//}
-
-			//if (infecFlag)
-			//{
-			//	cell->state = INCUBATING;
-			//	break;
-			//}
-
-			//if (refracFlag) 
-			//	cell->state = REFRACTORY;
-
-			break;
-
-		case INCUBATING:
-			cell->incubationTime--;
-			if (cell->incubationTime <= 0)
-				if (ranUni[ind] < IFNcellProb)
-					cell->state = INFECTED_PLUS;
-				else cell->state = INFECTED_MINUS;
+				if (ranUni[(ind+2)%numCells] < IFNcellProb)
+            		cell->state = INFECTED_PLUS;
+        		else
+            		cell->state = INFECTED_MINUS;
 			break;
 
 		case INFECTED_PLUS:
-			cell->expressingTime--;
+			cell->infectingTime--;
 			virions = virionProduction(cell->internalTime++);
 			cell->virions += virions; // virus field (virions * dt)
-			cell->releasedVirions += virions; // cumulative virions
-			cell->IFN += ifnProduction(cell->releasedVirions); // (ifnP * dt)
-			if (cell->expressingTime <= 0)
+			cell->dsRNA += k_syn * virions - k_deg * cell->dsRNA;
+			cell->IFN += ifnProduction(cell->dsRNA);
+			if (cell->infectingTime <= 0)
 				cell->state = DEAD;
 			break;
 
 		case INFECTED_MINUS:
-			cell->expressingTime--;
+			cell->infectingTime--;
 			cell->virions += virionProduction(cell->internalTime++);
-			if (cell->expressingTime <= 0)
+			// No dsRNA, no IFN production for minus-strand infected cells
+			if (cell->infectingTime <= 0)
 				cell->state = DEAD;
 			break;
 

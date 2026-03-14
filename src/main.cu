@@ -1,6 +1,6 @@
 /* AeroFlue: Influenza simulation
    Author: Rodolfo Blanco
-   Date: April 2025 */
+   Date: March 2026 */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,15 +21,19 @@ int main(int argc, char *argv[])
 	// Parse command-line arguments
 	/*==========================================*/
 
-	for (int i = 1; i < argc; i++)
+	// for (int i = 1; i < argc; i++)
+	int i = 1;
+	while (i < argc)
 	{
-		if (strncmp(argv[i], "--config=", 9) == 0)
+		if (strncmp(argv[i], "--config", 8) == 0)
 		{
-			config_file = argv[i] + 9;
+			config_file = argv[++i];
+			i++;
 		}
-		else if (strncmp(argv[i], "--structure=", 12) == 0)
+		else if (strncmp(argv[i], "--structure", 11) == 0)
 		{
-			structure_file = argv[i] + 12;
+			structure_file = argv[++i];
+			i++;
 		}
 		else
 		{
@@ -42,7 +46,7 @@ int main(int argc, char *argv[])
 	if (config_file == NULL || structure_file == NULL)
 	{
 		fprintf(stderr,
-				"Usage: %s --config=FILE --structure=FILE\n"
+				"Usage: %s --config FILE --structure FILE\n"
 				"  --config     : path to configuration file\n"
 				"  --structure  : path to cell positions file (e.g., CSV)\n",
 				argv[0]);
@@ -83,8 +87,7 @@ int main(int argc, char *argv[])
 	// Initialize CPU random numbers
 	ulong seed = options.ranSeed;
 	Ran ranUni(seed);
-	Poissondev ranIncubation(options.incubationPeriod, seed); 
-	Poissondev ranExpressing(options.expressingPeriod, seed); 
+	Poissondev ranInfecting(options.infectingPeriod, seed); 
 	
 	// Initialize GPU random numbers
 	float *d_ranUni;
@@ -118,10 +121,9 @@ int main(int argc, char *argv[])
 		cells[i].position = r;
 		cells[i].numNeighbors = 0;
 		cells[i].virions = 0.0f;
-		cells[i].releasedVirions = 0.0f;
+		cells[i].dsRNA = 0.0f;
 		cells[i].IFN = 0.0f;
-		cells[i].incubationTime = ranIncubation.dev();
-		cells[i].expressingTime = ranExpressing.dev();
+		cells[i].infectingTime = ranInfecting.dev();
 		cells[i].internalTime = 0;
 	}
 
@@ -134,18 +136,18 @@ int main(int argc, char *argv[])
 	/*==========================================*/
 
 	int ind;
-	//for (int i=0; i<options.numInfections; i++)
-	//{
-	//	do ind = numCells*ranUni.doub();
-	//	while (cells[ind].state == INCUBATING || cells[ind].state == NONPERMISSIVE);
+	for (int i=0; i<options.numInfections; i++)
+	{
+		do ind = numCells*ranUni.doub();
+		while (cells[ind].state == INFECTED_PLUS || cells[ind].state == NONPERMISSIVE);
 
-	//	cells[ind].state = INCUBATING;
-	//	cells[ind].virions = options.initialVirions;
-	//}
+		cells[ind].state = INFECTED_PLUS;
+		cells[ind].virions = options.initialVirions;
+	}
 
 	// Infecting a central cell of a rectangle tissue
-	ind = numCells/2 + 149;
-	cells[ind].state = INFECTED_PLUS;
+	// ind = numCells/2 + 149;
+	// cells[ind].state = INFECTED_PLUS;
 	//cells[ind].virions = options.initialVirions;
 
 	/*==========================================*/
@@ -205,7 +207,7 @@ int main(int argc, char *argv[])
 		noPrintFlag = step%printStep;
 		noMeasureFlag = step%measureStep;
 
-		if (!noPrintFlag) print_tissueSnapshots(cells, numCells, fSnap);
+		// if (!noPrintFlag) print_tissueSnapshots(cells, numCells, fSnap);
 
 		if (!noMeasureFlag)
 		{
@@ -220,8 +222,8 @@ int main(int argc, char *argv[])
 		curandGenerateUniform(gen, d_ranUni, numCells);
 
 		tissue_update<<<blks, ths>>>(cells, numCells, options.IFNcellProb, d_ranUni);
-		tissue_diffusion<<<blks, ths>>>(cells, numCells, options.virionDiffusion,  options.virionClearance,
-			options.IFNdiffusion, options.IFNclearance);
+		// tissue_diffusion<<<blks, ths>>>(cells, numCells, options.virionDiffusion,  options.virionClearance,
+		// 	options.IFNdiffusion, options.IFNclearance);
 
 		cudaDeviceSynchronize();
 	}

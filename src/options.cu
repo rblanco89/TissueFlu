@@ -28,10 +28,8 @@ void parse_options(const char *filename)
 				options.timeSteps = atoi(value);
 			else if (strcmp(key, "numInfections ") == 0)
 				options.numInfections = atoi(value);
-			else if (strcmp(key, "incubationPeriod ") == 0)
-				options.incubationPeriod = atoi(value);
-			else if (strcmp(key, "expressingPeriod ") == 0)
-				options.expressingPeriod = atoi(value);
+			else if (strcmp(key, "infectingPeriod ") == 0)
+				options.infectingPeriod = atoi(value);
 			else if (strcmp(key, "randSeed ") == 0)
 				options.ranSeed = atoi(value);
 

@@ -5,8 +5,7 @@ typedef struct
 {
     int timeSteps;
     int numInfections;
-    int incubationPeriod;
-    int expressingPeriod;
+    int infectingPeriod;
 	int ranSeed;
 
 	float neighRadius;
@@ -26,7 +25,6 @@ typedef enum
 {
 	NONPERMISSIVE,
 	SUSCEPTIBLE,
-	INCUBATING,
 	INFECTED_MINUS,
 	INFECTED_PLUS,
 	REFRACTORY,
@@ -39,11 +37,10 @@ typedef struct
 	float3 position;
 	CellState state;
 
-	int incubationTime;
-	int expressingTime;
+	int infectingTime;
 	int internalTime;
 	float virions;
-	float releasedVirions;
+	float dsRNA;
 	float IFN;
 
 	int numNeighbors;
