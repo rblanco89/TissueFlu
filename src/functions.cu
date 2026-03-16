@@ -188,6 +188,7 @@ __device__ float sigmoidFun(float x, float A, float K)
 
 __device__ float hillFun(float x, float K, float n)
 {
+	if (x <= 0.0f) return 0.0f;
     float xn = powf(x, n);
     float Kn = powf(K, n);
     return xn / (Kn + xn);
@@ -245,7 +246,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 	float k_syn = 0.1f; // dsRNA synthesis rate (dsRNA units / min / cell)
 	float k_deg = 0.01f; // dsRNA degradation rate (min^-1)
 
-	float virions, refracProb, infecProb, suppProb, effInfProb;
+	float logVirions, virions, refracProb, infecProb, suppProb, effInfProb;
 	Cell *cell = &cells[ind];
 	switch (cell->state)
 	{
@@ -262,11 +263,10 @@ __global__ void tissue_update(Cell *cells, int numCells,
 				break;
 			}
 
-			virions = log10(cell->virions + 1.0f);
-			infecProb = sigmoidFun(virions, 2, 2);
-			suppProb = 1.0 - sigmoidFun(cell->IFN/IFNref, 3, 0.5); // Suppresion mechanism
-			effInfProb = infecProb * suppProb * (1.0 - refracProb);
-			effInfProb = 0.0f; // CHECK: THIS IS INFECTED WITH NO VIRIONS
+			logVirions = log10(cell->virions + 1.0f);
+			infecProb = hillFun(logVirions, 2.0f, 2.0f); // infection mechanism	
+			suppProb = 1.0f - sigmoidFun(cell->IFN/IFNref, 3, 0.5); // suppression mechanism
+			effInfProb = infecProb * suppProb;
 			if (effInfProb > ranUni[(ind+1)%numCells])
 				if (ranUni[(ind+2)%numCells] < IFNcellProb)
             		cell->state = INFECTED_PLUS;

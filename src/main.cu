@@ -222,8 +222,8 @@ int main(int argc, char *argv[])
 		curandGenerateUniform(gen, d_ranUni, numCells);
 
 		tissue_update<<<blks, ths>>>(cells, numCells, options.IFNcellProb, d_ranUni);
-		// tissue_diffusion<<<blks, ths>>>(cells, numCells, options.virionDiffusion,  options.virionClearance,
-		// 	options.IFNdiffusion, options.IFNclearance);
+		tissue_diffusion<<<blks, ths>>>(cells, numCells, options.virionDiffusion,  options.virionClearance,
+			options.IFNdiffusion, options.IFNclearance);
 
 		cudaDeviceSynchronize();
 	}
