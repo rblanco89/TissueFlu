@@ -90,44 +90,19 @@ __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap)
 
 // ==================================================================
 
-//__host__ void build_neighbors(Cell *cells, int numCells, float cutoff)
-//{
-//	for (int i = 0; i < numCells; i++)
-//		cells[i].numNeighbors = 0;
-//
-//	for (int i=0; i<numCells-1; i++)
-//		for (int j=i+1; j<numCells; j++)
-//		{
-//			float3 ri = cells[i].position;
-//			float3 rj = cells[j].position;
-//
-//			float dx = ri.x - rj.x;
-//			float dy = ri.y - rj.y;
-//			float dz = ri.z - rj.z;
-//
-//			float dist2 = dx*dx + dy*dy + dz*dz;
-//
-//			if (dist2 > cutoff*cutoff) continue;
-//
-//			// Add j to i's neighbor list
-//			if (cells[i].numNeighbors < MAX_NEIGHBORS)
-//				cells[i].neighbors[cells[i].numNeighbors++] = j;
-//			else
-//			{
-//				fprintf(stderr, "Warning: cell %d neighbor list full\n", i);
-//				break;
-//			}
-//
-//			// Add i to j's neighbor list
-//			if (cells[j].numNeighbors < MAX_NEIGHBORS)
-//				cells[j].neighbors[cells[j].numNeighbors++] = i;
-//			else
-//			{
-//				fprintf(stderr, "Warning: cell %d neighbor list full\n", j);
-//				break;
-//			}
-//		}
-//}
+__host__ void sustainability_check(Cell *cells, int numCells)
+{	
+	// Quick stability check
+	float maxSum = 0.0f;
+	for (int i = 0; i < numCells; i++)
+	{
+	    float wSum = 0.0f;
+	    for (int j = 0; j < cells[i].numNeighbors; j++)
+	        wSum += 1.0f / cells[i].neighDist2[j];
+	    maxSum = fmaxf(maxSum, wSum);
+	}
+	printf("Stability criterion: D_V must be < %.6f\n", 0.5f / maxSum);
+}
 
 // ==================================================================
 // DEVICE FUNCTIONS
@@ -212,26 +187,13 @@ __device__ float virionProduction(int time)
 
 // ==================================================================
 
-__device__ float ifnProduction(float dsRNA)
+__device__ float ifnProduction(float virions)
 {
-    // const float pfMax = 0.25f;     // max IFN production rate (IFN units / min / cell)
-    // const float Kf    = 7582.23165;   // half-max at virions = Kf  (virions)
-    // const float n     = 2.0f;     // Hill coefficient (2–4 typical)
-
-    // Hill function (stable form)
-    // pF = pFmax * S^n / (K^n + S^n)
-    // float Sn = powf(virions, n);
-    // float Kn = powf(Kf, n);
-
-    // return pfMax * (Sn / (Kn + Sn));
-
 	const float pFmax = 0.25f;     // max IFN production rate (IFN units / min / cell)
-    const float K_dsRNA    = 1.0;   // half-max at dsRNA (dsRNA units)
+    const float K_IFN    = 1.0f;   // half-max at dsRNA (dsRNA units)
 	const float n     = 2.0f;     // Hill coefficient (2–4 typical)
 
-	float dsRNA_n = powf(dsRNA, n);
-	float K_n     = powf(K_dsRNA, n);
-	return pFmax * (dsRNA_n / (K_n + dsRNA_n));
+	return pFmax * hillFun(virions, K_IFN, n);
 }
 
 // ==================================================================
@@ -243,6 +205,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 	if (ind >= numCells) return;
 
 	float IFNref = 1.0f;
+	float pFmax = 0.25f; // max IFN production rate (IFN units / min / cell)
 	float k_syn = 0.1f; // dsRNA synthesis rate (dsRNA units / min / cell)
 	float k_deg = 0.01f; // dsRNA degradation rate (min^-1)
 
@@ -265,7 +228,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 
 			logVirions = log10(cell->virions + 1.0f);
 			infecProb = hillFun(logVirions, 2.0f, 2.0f); // infection mechanism	
-			suppProb = 1.0f - sigmoidFun(cell->IFN/IFNref, 3, 0.5); // suppression mechanism
+			suppProb = 1.0f - hillFun(cell->IFN, 3, 2); // suppression mechanism
 			effInfProb = infecProb * suppProb;
 			if (effInfProb > ranUni[(ind+1)%numCells])
 				if (ranUni[(ind+2)%numCells] < IFNcellProb)
@@ -278,8 +241,10 @@ __global__ void tissue_update(Cell *cells, int numCells,
 			cell->infectingTime--;
 			virions = virionProduction(cell->internalTime++);
 			cell->virions += virions; // virus field (virions * dt)
-			cell->dsRNA += k_syn * virions - k_deg * cell->dsRNA;
-			cell->IFN += ifnProduction(cell->dsRNA);
+
+			cell->IFN = ifnProduction(virions);
+			// cell->dsRNA += k_syn * virions - k_deg * cell->dsRNA;
+			// cell->IFN += ifnProduction(cell->dsRNA);
 			if (cell->infectingTime <= 0)
 				cell->state = DEAD;
 			break;
@@ -309,24 +274,30 @@ __global__ void tissue_diffusion(Cell *cells, int numCells,
 	Cell cell = cells[ind];
 
 	// MODEL 1
+	float weightSum = 0.0f;
 	float diffVirions = 0.0;
 	float diffIFN = 0.0;
 
 	for (int j=0; j<cell.numNeighbors; j++)
 	{
 		int ind_j = cell.neighbors[j];
-		float dist2 = cell.neighDist2[j];
+		float w = 1.0f / cell.neighDist2[j];
 
-		diffVirions += (cells[ind_j].virions - cell.virions) / dist2;
-		diffIFN += (cells[ind_j].IFN - cell.IFN) / dist2;
+		diffVirions += w*(cells[ind_j].virions - cell.virions);
+		diffIFN += w*(cells[ind_j].IFN - cell.IFN);
+
+		weightSum += w;
 	}
 
+	float norm = (weightSum > 0.0f) ? weightSum : 1.0f;
+	// float norm = 1.0f;
+
 	// Update count of virions for each cell
-	float diffusedVirions = virionDiffusion*diffVirions;
+	float diffusedVirions = virionDiffusion*diffVirions/norm;
 	cells[ind].virions = (1.0 - virionClearance)*(cell.virions + diffusedVirions);
 
 	// Update IFN for each cell
-	float diffusedIFN = IFNdiffusion*diffIFN;
+	float diffusedIFN = IFNdiffusion*diffIFN/norm;
 	cells[ind].IFN = (1.0 - IFNclearance)*(cell.IFN + diffusedIFN);
 
 	// MODEL 2 (New Mexico Approach)

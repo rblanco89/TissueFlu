@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
 	// Initialize CPU random numbers
 	ulong seed = options.ranSeed;
 	Ran ranUni(seed);
-	Poissondev ranInfecting(options.infectingPeriod, seed); 
+	Poissondev ranInfecting(options.infectingPeriod/60, seed); // Given in hours 
 	
 	// Initialize GPU random numbers
 	float *d_ranUni;
@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
 		cells[i].virions = 0.0f;
 		cells[i].dsRNA = 0.0f;
 		cells[i].IFN = 0.0f;
-		cells[i].infectingTime = ranInfecting.dev();
+		cells[i].infectingTime = 60*ranInfecting.dev(); // Convert to minutes
 		cells[i].internalTime = 0;
 	}
 
@@ -156,12 +156,16 @@ int main(int argc, char *argv[])
 
 	char filename[128];
 
-	sprintf(filename, "results/snapshots.xyz");
-	FILE *fSnap = fopen(filename, "w");
-	if (!fSnap)
+	FILE *fSnap;
+	if (options.printSnap)
 	{
-		fprintf(stderr, "Error: could not open %s for writing\n", filename);
-		return 1;
+		sprintf(filename, "results/snapshots.xyz");
+		fSnap = fopen(filename, "w");
+		if (!fSnap)
+		{
+			fprintf(stderr, "Error: could not open %s for writing\n", filename);
+			return 1;
+		}
 	}
 
 	sprintf(filename, "results/tissueState.csv");
@@ -191,8 +195,6 @@ int main(int argc, char *argv[])
 	int blks = 1 + (numCells - 1)/ths;
 
 	short noPrintFlag, noMeasureFlag;
-	int printStep = 0.005*options.timeSteps;
-	int measureStep = 0.005*options.timeSteps;
 
 	printf("Creating list of neighbors...\n");
 
@@ -200,14 +202,20 @@ int main(int argc, char *argv[])
 	build_neighbors<<<blks, ths>>>(cells, numCells, options.neighRadius);
 	cudaDeviceSynchronize();
 
+	// sustainability_check(cells, numCells);
+	// exit(0);
+
 	printf("Starting simulation...\n");
 
 	for (int step=0; step<options.timeSteps; step++)
 	{
-		noPrintFlag = step%printStep;
-		noMeasureFlag = step%measureStep;
+		noMeasureFlag = step%options.measureInterval;
 
-		// if (!noPrintFlag) print_tissueSnapshots(cells, numCells, fSnap);
+		if (options.printSnap)
+		{
+			noPrintFlag = step%options.snapInterval;
+			if (!noPrintFlag) print_tissueSnapshots(cells, numCells, fSnap);
+		}
 
 		if (!noMeasureFlag)
 		{
@@ -222,15 +230,15 @@ int main(int argc, char *argv[])
 		curandGenerateUniform(gen, d_ranUni, numCells);
 
 		tissue_update<<<blks, ths>>>(cells, numCells, options.IFNcellProb, d_ranUni);
-		tissue_diffusion<<<blks, ths>>>(cells, numCells, options.virionDiffusion,  options.virionClearance,
-			options.IFNdiffusion, options.IFNclearance);
+		tissue_diffusion<<<blks, ths>>>(cells, numCells, options.virionDiffusion,
+			options.virionClearance, options.IFNdiffusion, options.IFNclearance);
 
 		cudaDeviceSynchronize();
 	}
 
 	fclose(fStat);
-	fclose(fSnap);
 	fclose(fCell);
+	if (options.printSnap) fclose(fSnap);
 
 	printf("Simulation completed\n");
 

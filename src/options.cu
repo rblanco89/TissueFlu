@@ -32,6 +32,12 @@ void parse_options(const char *filename)
 				options.infectingPeriod = atoi(value);
 			else if (strcmp(key, "randSeed ") == 0)
 				options.ranSeed = atoi(value);
+			else if (strcmp(key, "printSnapshots ") == 0)
+				options.printSnap = atoi(value);
+			else if (strcmp(key, "snapshotInterval ") == 0)
+				options.snapInterval = atoi(value);
+			else if (strcmp(key, "measureInterval ") == 0)
+				options.measureInterval = atoi(value);
 
 			else if (strcmp(key, "neighRadius ") == 0)
 				options.neighRadius = atof(value);
