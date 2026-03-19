@@ -173,9 +173,9 @@ __device__ float hillFun(float x, float K, float n)
 
 __device__ float virionProduction(int time)
 {
-	const float A  = 17783.4953f;    // max cumulative virions
-    const float K  = 16.1392f * 60; // half-max time: 16.14 hrs -> 968.35 min
-    const float n  = 2.3613f;        // Hill coefficient
+	const float A  = 17703.6603f;    // max cumulative virions
+    const float K  = 16.1275f * 60; // half-max time (min)
+    const float n  = 2.3904;        // Hill coefficient
 
     float t  = (float)time;
     float Kn = powf(K, n);
@@ -207,7 +207,7 @@ __global__ void tissue_update(Cell *cells, int numCells,
 	float IFNref = 1.0f;
 	float pFmax = 0.25f; // max IFN production rate (IFN units / min / cell)
 	float k_syn = 0.1f; // dsRNA synthesis rate (dsRNA units / min / cell)
-	float k_deg = 0.01f; // dsRNA degradation rate (min^-1)
+	float k_deg = 0.005f / 60.0f; // dsRNA degradation rate (min^-1)
 
 	float logVirions, virions, refracProb, infecProb, suppProb, effInfProb;
 	Cell *cell = &cells[ind];
@@ -242,9 +242,9 @@ __global__ void tissue_update(Cell *cells, int numCells,
 			virions = virionProduction(cell->internalTime++);
 			cell->virions += virions; // virus field (virions * dt)
 
-			cell->IFN = ifnProduction(virions);
-			// cell->dsRNA += k_syn * virions - k_deg * cell->dsRNA;
-			// cell->IFN += ifnProduction(cell->dsRNA);
+			// cell->IFN = ifnProduction(virions);
+			cell->dsRNA += k_syn * virions - k_deg * cell->dsRNA;
+			cell->IFN = pFmax * cell->dsRNA;
 			if (cell->infectingTime <= 0)
 				cell->state = DEAD;
 			break;
