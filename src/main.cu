@@ -136,18 +136,18 @@ int main(int argc, char *argv[])
 	/*==========================================*/
 
 	int ind;
-	for (int i=0; i<options.numInfections; i++)
-	{
-		do ind = numCells*ranUni.doub();
-		while (cells[ind].state == INFECTED_PLUS || cells[ind].state == NONPERMISSIVE);
+	// for (int i=0; i<options.numInfections; i++)
+	// {
+	// 	do ind = numCells*ranUni.doub();
+	// 	while (cells[ind].state == INFECTED_PLUS || cells[ind].state == NONPERMISSIVE);
 
-		cells[ind].state = INFECTED_PLUS;
-		cells[ind].virions = options.initialVirions;
-	}
+	// 	cells[ind].state = INFECTED_PLUS;
+	// 	cells[ind].virions = options.initialVirions;
+	// }
 
 	// Infecting a central cell of a rectangle tissue
-	// ind = numCells/2 + 149;
-	// cells[ind].state = INFECTED_PLUS;
+	ind = numCells/2 + 149;
+	cells[ind].state = INFECTED_PLUS;
 	//cells[ind].virions = options.initialVirions;
 
 	/*==========================================*/
@@ -201,9 +201,6 @@ int main(int argc, char *argv[])
 	// Find neighbors and store in cell structure
 	build_neighbors<<<blks, ths>>>(cells, numCells, options.neighRadius);
 	cudaDeviceSynchronize();
-
-	// sustainability_check(cells, numCells);
-	// exit(0);
 
 	printf("Starting simulation...\n");
 

@@ -48,7 +48,7 @@ typedef struct
 
 	int numNeighbors;
 	int neighbors[MAX_NEIGHBORS];
-	float neighDist2[MAX_NEIGHBORS];
+	float weights[MAX_NEIGHBORS];
 }
 Cell;
 
@@ -60,7 +60,6 @@ void parse_options(const char *filename);
 __host__ long nextPow2(long x);
 __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap);
 __host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fStat);
-__host__ void sustainability_check(Cell *cells, int numCells); 
 
 __global__ void build_neighbors(Cell *cells, int numCells, float cutoff);
 __global__ void tissue_update(Cell *cells, int numCells, float IFNcellProb, float *d_ranUni);
