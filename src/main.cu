@@ -202,6 +202,13 @@ int main(int argc, char *argv[])
 	build_neighbors<<<blks, ths>>>(cells, numCells, options.neighRadius);
 	cudaDeviceSynchronize();
 
+	float maxDiffusion = stabilityCondition(cells, numCells);
+	if (maxDiffusion < options.virionDiffusion || maxDiffusion < options.IFNdiffusion)
+	{
+		printf("Diffusion parameters must be less than %f\n", maxDiffusion);
+		exit(0);
+	}
+
 	printf("Starting simulation...\n");
 
 	for (int step=0; step<options.timeSteps; step++)
@@ -219,6 +226,7 @@ int main(int argc, char *argv[])
 			printf("Step %d/%d\n", step, options.timeSteps);
 			print_tissueStatus(cells, numCells, step, fStat);
 			fprintf(fCell, "%d,%f,%f\n", step, cells[ind].virions, cells[ind].IFN);
+			// fprintf(fCell, "%d,%f,%f\n", step, cells[10000].virions, cells[10000].IFN);
 		}
 
 		// GPU functions (kernels)

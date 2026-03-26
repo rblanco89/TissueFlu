@@ -21,6 +21,22 @@ __host__ long nextPow2(long x)
 }
 
 // ==================================================================
+
+__host__  float stabilityCondition(Cell *cells, int numCells)
+{
+	float maxWeightSum = 0.0f;
+	for (int i = 0; i < numCells; i++)
+	{
+		float ws = 0.0f;
+		for (int j = 0; j < cells[i].numNeighbors; j++)
+			ws += cells[i].weights[j];
+		maxWeightSum = fmaxf(maxWeightSum, ws);
+	}
+
+	return 1.0f/maxWeightSum;
+}
+
+// ==================================================================
 __host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fStat)
 {
 	float viralLoad = 0.0, IFNlevel = 0.0;
@@ -99,7 +115,7 @@ __global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 
 	float3 ri, rj, dr;
 	float dist2, w;
-	float weightSum = 0.0f;
+	// float weightSum = 0.0f;
 	int numNeighbors = 0;
 
 	for (int ind_j=0; ind_j<numCells; ind_j++)
@@ -126,7 +142,7 @@ __global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 		if (numNeighbors < MAX_NEIGHBORS)
 		{
 			w = 1.0f / dist2;
-			weightSum += w;
+			// weightSum += w;
 			cells[ind].neighbors[numNeighbors] = ind_j;
 			cells[ind].weights[numNeighbors] = w;
 			numNeighbors++;
@@ -139,8 +155,8 @@ __global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 	}
 
 	cells[ind].numNeighbors = numNeighbors;
-	for (int j=0; j<numNeighbors; j++)
-		cells[ind].weights[j] /= weightSum;
+	// for (int j=0; j<numNeighbors; j++)
+		// cells[ind].weights[j] /= weightSum;
 }
 
 // ==================================================================
@@ -177,7 +193,6 @@ __global__ void tissue_update(Cell *cells, int numCells,
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
 
-	float IFNref = 1.0f;
 	float pFmax = 0.00025f; // max IFN production rate (IFN min^-1 dsRNA^-1)
 	float k_syn = 1.0f; // dsRNA synthesis rate (dsRNA min^-1 virions^-1)
 	float k_deg = 0.15f / 60.0f; // dsRNA degradation rate (min^-1)
@@ -187,14 +202,14 @@ __global__ void tissue_update(Cell *cells, int numCells,
 	switch (cell->state)
 	{
 		case NONPERMISSIVE:
-			// refracProb = hillFun(cell->IFN, 6, 2.0f);
+			refracProb = hillFun(cell->IFN, 10.0f, 3.0f);
 			refracProb = 0.0f;
 			if (refracProb > ranUni[ind]) cell->state = REFRACTORY;
 			break;
 
 		case SUSCEPTIBLE:
-			// refracProb = hillFun(cell->IFN, 6, 2.0f); // refractory mechanism
-			refracProb = 0.0f;
+			refracProb = hillFun(cell->IFN, 10.0f, 3.0f); // refractory mechanism
+			// refracProb = 0.0f;
 			if (refracProb > ranUni[ind])
 			{
 				cell->state = REFRACTORY;
@@ -202,10 +217,10 @@ __global__ void tissue_update(Cell *cells, int numCells,
 			}
 
 			logVirions = log10(cell->virions + 1.0f);
-			infecProb = hillFun(logVirions, 2.0f, 2.0f); // infection mechanism	
-			suppProb = 1.0f - hillFun(cell->IFN, 3, 2); // suppression mechanism
-			// effInfProb = infecProb * suppProb;
-			effInfProb = infecProb;
+			infecProb = hillFun(logVirions, 3.0f, 3.0f); // infection mechanism	
+			suppProb = 1.0f - hillFun(cell->IFN, 5.0f, 3.0f); // suppression mechanism
+			effInfProb = infecProb * suppProb;
+			// effInfProb = infecProb;
 			// effInfProb = 0.0f;
 			if (effInfProb > ranUni[(ind+1)%numCells])
 				if (ranUni[(ind+2)%numCells] < IFNcellProb)

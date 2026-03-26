@@ -1,5 +1,5 @@
 #define THS_MAX 256
-#define MAX_NEIGHBORS 64
+#define MAX_NEIGHBORS 128
 
 typedef struct
 {
@@ -58,6 +58,7 @@ Cell;
 
 void parse_options(const char *filename);
 __host__ long nextPow2(long x);
+__host__ float stabilityCondition(Cell *cells, int numCells);
 __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap);
 __host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fStat);
 
