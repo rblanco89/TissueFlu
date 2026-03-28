@@ -3,3 +3,5 @@
 *.ipynb_checkpoints
 aeroflu
 results/*
+structures/Gauthier_lungSlices/*
+structures/Yumna_data/*
