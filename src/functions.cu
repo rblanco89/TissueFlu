@@ -98,9 +98,11 @@ __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap)
         // State as numeric for coloring in Ovito
         int state = (int)cell.state;
 		float3 r = cell.position;
+		float virions = cell.virions;
+		float IFN = cell.IFN;
 
         // Format: state radius x y
-        fprintf(fSnap, "%d %f %f %f\n", state, r.x, r.y, r.z);
+        fprintf(fSnap, "%d %f %f %f %f %f\n", state, r.x, r.y, r.z, virions, IFN);
 	}
 }
 
@@ -201,11 +203,10 @@ __global__ void tissue_update(Cell *cells, int numCells,
 	Cell *cell = &cells[ind];
 	switch (cell->state)
 	{
-		case NONPERMISSIVE:
-			refracProb = hillFun(cell->IFN, 10.0f, 3.0f);
-			refracProb = 0.0f;
-			if (refracProb > ranUni[ind]) cell->state = REFRACTORY;
-			break;
+		// case NONPERMISSIVE:
+		// 	refracProb = hillFun(cell->IFN, 10.0f, 3.0f);
+		// 	if (refracProb > ranUni[ind]) cell->state = REFRACTORY;
+		// 	break;
 
 		case SUSCEPTIBLE:
 			refracProb = hillFun(cell->IFN, 10.0f, 3.0f); // refractory mechanism

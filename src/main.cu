@@ -136,19 +136,21 @@ int main(int argc, char *argv[])
 	/*==========================================*/
 
 	int ind;
-	// for (int i=0; i<options.numInfections; i++)
-	// {
-	// 	do ind = numCells*ranUni.doub();
-	// 	while (cells[ind].state == INFECTED_PLUS || cells[ind].state == NONPERMISSIVE);
+	for (int i=0; i<options.numInfections; i++)
+	{
+		do ind = numCells*ranUni.doub();
+		while (cells[ind].virions > 0.0f);
+		// while (cells[ind].state == INFECTED_PLUS || cells[ind].state == NONPERMISSIVE);
+		// cells[ind].state = INFECTED_PLUS;
 
-	// 	cells[ind].state = INFECTED_PLUS;
-	// 	cells[ind].virions = options.initialVirions;
-	// }
+		cells[ind].virions = options.initialVirions;
+	}
 
 	// Infecting a central cell of a rectangle tissue
-	ind = numCells/2 + 149;
-	cells[ind].state = INFECTED_PLUS;
-	//cells[ind].virions = options.initialVirions;
+	// ind = numCells/2 + 149; // 300 x 300 square tissue
+	// ind = 27332; // lung windows selection
+	// cells[ind].state = INFECTED_PLUS;
+	// cells[ind].virions = options.initialVirions;
 
 	/*==========================================*/
 	// Initialize files for results
