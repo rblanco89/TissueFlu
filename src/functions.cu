@@ -37,15 +37,22 @@ __host__  float stabilityCondition(Cell *cells, int numCells)
 }
 
 // ==================================================================
-__host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fStat)
+
+__host__ void tissue_metrics(Cell *cells, int numCells, double metrics[7])
 {
-	float viralLoad = 0.0, IFNlevel = 0.0;
-	int npCells = 0, sCells = 0, rCells = 0, iCells = 0, dCells = 0;
+	double viralLoad = 0.0;
+	double IFNlevel = 0.0;
+	double sCells = 0.0;
+	double rCells = 0.0;
+	double iCells = 0.0;
+	double dCells = 0.0;
+	double npCells = 0.0;
 
 	for (int i=0; i<numCells; i++)
 	{
 		viralLoad += cells[i].virions;
 		IFNlevel += cells[i].IFN;
+
 		switch (cells[i].state)
 		{
 			case NONPERMISSIVE:
@@ -61,9 +68,6 @@ __host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fSta
 				break;
 
 			case INFECTED_MINUS:
-				iCells++;
-				break;
-
 			case INFECTED_PLUS:
 				iCells++;
 				break;
@@ -77,9 +81,15 @@ __host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fSta
 		}
 	}
 
-	fprintf(fStat, "%d,%e,%e,%d,%d,%d,%d,%d\n", step, viralLoad, IFNlevel,
-		sCells, rCells, iCells, dCells, npCells);
+	metrics[0] = viralLoad;
+	metrics[1] = IFNlevel;
+	metrics[2] = sCells;
+	metrics[3] = rCells;
+	metrics[4] = iCells;
+	metrics[5] = dCells;
+	metrics[6] = npCells;
 }
+
 // ==================================================================
 
 __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap)

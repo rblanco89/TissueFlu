@@ -1,10 +1,11 @@
 #define THS_MAX 256
-#define MAX_NEIGHBORS 128
+#define MAX_NEIGHBORS 256
 
 typedef struct
 {
     int timeSteps;
     int numInfections;
+	int numReplicates;
     int infectingPeriod;
 	int ranSeed;
 	int printSnap;
@@ -59,8 +60,8 @@ Cell;
 void parse_options(const char *filename);
 __host__ long nextPow2(long x);
 __host__ float stabilityCondition(Cell *cells, int numCells);
+__host__ void tissue_metrics(Cell *cells, int numCells, double metrics[7]);
 __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap);
-__host__ void print_tissueStatus(Cell *cells, int numCells, int step, FILE *fStat);
 
 __global__ void build_neighbors(Cell *cells, int numCells, float cutoff);
 __global__ void tissue_update(Cell *cells, int numCells, float IFNcellProb, float *d_ranUni);

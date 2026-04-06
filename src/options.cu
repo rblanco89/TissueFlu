@@ -7,6 +7,22 @@ Options options;  // global struct
 
 void parse_options(const char *filename)
 {
+	// Set default values
+	options.timeSteps = 1000;
+	options.numInfections = 1;
+	options.initialVirions = 1.0f;
+	options.numReplicates = 1;
+	options.neighRadius = 5.0f;
+
+	options.infectingPeriod = 1800; // 30 hours
+	options.nonPermProb = 0.0f;
+	options.IFNcellProb = 0.0f;
+
+	options.printSnap = 0;
+	options.snapInterval = 100;
+	options.measureInterval = 100;
+
+	
 	FILE *file = fopen(filename, "r");
 	if (!file)
 	{
@@ -38,6 +54,8 @@ void parse_options(const char *filename)
 				options.snapInterval = atoi(value);
 			else if (strcmp(key, "measureInterval ") == 0)
 				options.measureInterval = atoi(value);
+			else if (strcmp(key, "numReplicates ") == 0)
+				options.numReplicates = atoi(value);
 
 			else if (strcmp(key, "neighRadius ") == 0)
 				options.neighRadius = atof(value);
