@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include <cuda_runtime.h>
 #include <curand.h>
@@ -140,7 +141,7 @@ int main(int argc, char *argv[])
 	float maxDiffusion = stabilityCondition(cells, numCells);
 	if (maxDiffusion < options.virionDiffusion || maxDiffusion < options.IFNdiffusion)
 	{
-		printf("Diffusion parameters must be less than %f\n", maxDiffusion);
+		printf("Diffusion parameters must be less than %f\nStopping...\n", maxDiffusion);
 		cudaFree(cells);
 		cudaFree(d_ranUni);
 		curandDestroyGenerator(gen);

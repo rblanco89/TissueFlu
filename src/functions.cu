@@ -28,8 +28,7 @@ __host__  float stabilityCondition(Cell *cells, int numCells)
 	for (int i = 0; i < numCells; i++)
 	{
 		float ws = 0.0f;
-		for (int j = 0; j < cells[i].numNeighbors; j++)
-			ws += cells[i].weights[j];
+		for (int j = 0; j < cells[i].numNeighbors; j++) ws += cells[i].weights[j];
 		maxWeightSum = fmaxf(maxWeightSum, ws);
 	}
 
