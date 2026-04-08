@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
 
 	for (int rep=0; rep<options.numReplicates; rep++)
 	{
-		printf("\nStarting replicate %d/%d\n", rep+1, options.numReplicates);
+		printf("\nRunning replicate %d/%d\n", rep+1, options.numReplicates);
 
 		// Initialize/Reset random numbers
 		ulong seed = options.ranSeed + rep;
@@ -216,11 +216,16 @@ int main(int argc, char *argv[])
 		/*==========================================*/
 
 		int measureIdx = 0;
+		double metrics[7];
+		int progressInterval = options.timeSteps / 10;
+		if (progressInterval == 0) progressInterval = 1;
 		for (int step=0; step<=options.timeSteps; step++)
 		{
-			if (step%options.measureInterval == 0)
+			if (step % progressInterval == 0) printf("."); fflush(stdout);
+
+			if (step % options.measureInterval == 0)
 			{
-				double metrics[7];
+				memset(metrics, 0, sizeof(metrics));
 				tissue_metrics(cells, numCells, metrics);
 				for (int m=0; m<7; m++)
 				{
@@ -230,16 +235,22 @@ int main(int argc, char *argv[])
 				measureIdx++;
 				
 				if (fCell) fprintf(fCell, "%d,%f,%f\n", step, cells[ind].virions, cells[ind].IFN);
-
-				if (int(100*measureIdx/float(numMeasures)) % 10 == 0)
-				{
-					printf("."); fflush(stdout);
-				}
 			}
 
 			// Print snapshots only if 1 replicate and printSnap is ON
 			if (fSnap && step % options.snapInterval == 0)
-				print_tissueSnapshots(cells, numCells, fSnap);
+			{
+				if (options.printSnap == 2)
+				{
+					if (options.snapInterval != options.measureInterval)
+					{
+						memset(metrics, 0, sizeof(metrics));
+						tissue_metrics(cells, numCells, metrics);
+					}
+					print_infectedSnapshots(cells, numCells, fSnap, int(metrics[4]));
+				}
+				else print_tissueSnapshots(cells, numCells, fSnap);
+			}
 
 			// Generate GPU random numbers
 			curandGenerateUniform(gen, d_ranUni, numCells);

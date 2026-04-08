@@ -95,17 +95,14 @@ __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap)
 {
 	// Define the grid and declare properties
 	fprintf(fSnap, "%d\n", numCells);
-	//fprintf(fSnap, "Lattice=\"%.2f 0.00 0.00 ", width);
-	//fprintf(fSnap, "0.00 %.2f 0.00 ", height);
-	//fprintf(fSnap, "0.00 0.00 %.2f\" ", 2.0);
-	fprintf(fSnap, "Properties=species:I:1:pos:R:3\n");
+	fprintf(fSnap, "Properties=species:I:1:pos:R:3:virions:R:1:IFN:R:1\n");
 
     for (int i=0; i<numCells; i++)
 	{
 		Cell cell = cells[i];
 
         // State as numeric for coloring in Ovito
-        int state = (int)cell.state;
+        int state = cell.state;
 		float3 r = cell.position;
 		float virions = cell.virions;
 		float IFN = cell.IFN;
@@ -115,6 +112,31 @@ __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap)
 	}
 }
 
+// ==================================================================
+
+__host__ void print_infectedSnapshots(Cell *cells, int numCells, FILE *fSnap, int numInf)
+{
+	// Define the grid and declare properties
+	fprintf(fSnap, "%d\n", numInf);
+	fprintf(fSnap, "Properties=species:I:1:pos:R:3:virions:R:1:IFN:R:1\n");
+
+	if (numInf == 0) return;
+
+    for (int i=0; i<numCells; i++)
+	{
+		Cell cell = cells[i];
+
+        // State as numeric for coloring in Ovito
+        int state = cell.state;
+		if (state != INFECTED_PLUS && state != INFECTED_MINUS) continue;
+		float3 r = cell.position;
+		float virions = cell.virions;
+		float IFN = cell.IFN;
+
+        // Format: state radius x y
+        fprintf(fSnap, "%d %f %f %f %f %f\n", state, r.x, r.y, r.z, virions, IFN);
+	}
+}
 // ==================================================================
 // DEVICE FUNCTIONS
 // ==================================================================
