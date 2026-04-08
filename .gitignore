@@ -3,3 +3,4 @@
 *.ipynb_checkpoints
 aeroflu
 results/*
+structures/cells_normalized_yumna.csv
