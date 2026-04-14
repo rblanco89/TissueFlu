@@ -37,56 +37,33 @@ __host__  float stabilityCondition(Cell *cells, int numCells)
 
 // ==================================================================
 
-__host__ void tissue_metrics(Cell *cells, int numCells, double metrics[7])
+__host__ void tissue_metrics(Cell *cells, int numCells, int *cellCounts,
+                             double *tissueSum, double *tissueSqSum, int measureIdx)
 {
+	double val[7];
+
 	double viralLoad = 0.0;
 	double IFNlevel = 0.0;
-	double sCells = 0.0;
-	double rCells = 0.0;
-	double iCells = 0.0;
-	double dCells = 0.0;
-	double npCells = 0.0;
-
 	for (int i=0; i<numCells; i++)
 	{
 		viralLoad += cells[i].virions;
 		IFNlevel += cells[i].IFN;
-
-		switch (cells[i].state)
-		{
-			case NONPERMISSIVE:
-				npCells++;
-				break;
-
-			case SUSCEPTIBLE:
-				sCells++;
-				break;
-
-			case REFRACTORY:
-				rCells++;
-				break;
-
-			case INFECTED_MINUS:
-			case INFECTED_PLUS:
-				iCells++;
-				break;
-
-			case DEAD:
-				dCells++;
-				break;
-
-			default:
-				break;
-		}
 	}
 
-	metrics[0] = viralLoad;
-	metrics[1] = IFNlevel;
-	metrics[2] = sCells;
-	metrics[3] = rCells;
-	metrics[4] = iCells;
-	metrics[5] = dCells;
-	metrics[6] = npCells;
+	val[0] = viralLoad;
+	val[1] = IFNlevel;
+	val[2] = (double)cellCounts[SUSCEPTIBLE];
+	val[3] = (double)cellCounts[REFRACTORY];
+	val[4] = (double)(cellCounts[INFECTED_PLUS] + cellCounts[INFECTED_MINUS]);
+	val[5] = (double)cellCounts[DEAD];
+	val[6] = (double)cellCounts[NONPERMISSIVE];
+
+	int base = measureIdx * 7;
+	for (int m = 0; m < 7; m++)
+	{
+		tissueSum[base + m]   += val[m];
+		tissueSqSum[base + m] += val[m] * val[m];
+	}
 }
 
 // ==================================================================
@@ -252,7 +229,7 @@ __device__ float virionProduction(int time)
 
 // ==================================================================
 
-__global__ void tissue_update(Cell *cells, int numCells,
+__global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 							  float IFNcellProb, float *ranUni)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
@@ -277,20 +254,32 @@ __global__ void tissue_update(Cell *cells, int numCells,
 			if (refracProb > ranUni[ind])
 			{
 				cell->state = REFRACTORY;
+				atomicAdd(&cellCounts[SUSCEPTIBLE], -1);
+				atomicAdd(&cellCounts[REFRACTORY],   1);
 				break;
 			}
 
 			logVirions = log10(cell->virions + 1.0f);
-			infecProb = hillFun(logVirions, 3.0f, 3.0f); // infection mechanism	
+			infecProb = hillFun(logVirions, 3.0f, 3.0f); // infection mechanism
 			suppProb = 1.0f - hillFun(cell->IFN, 5.0f, 3.0f); // suppression mechanism
 			effInfProb = infecProb * suppProb;
 			// effInfProb = infecProb;
 			// effInfProb = 0.0f;
 			if (effInfProb > ranUni[(ind+1)%numCells])
+			{
 				if (ranUni[(ind+2)%numCells] < IFNcellProb)
-            		cell->state = INFECTED_PLUS;
-        		else
-            		cell->state = INFECTED_MINUS;
+				{
+					cell->state = INFECTED_PLUS;
+					atomicAdd(&cellCounts[SUSCEPTIBLE],    -1);
+					atomicAdd(&cellCounts[INFECTED_PLUS],   1);
+				}
+				else
+				{
+					cell->state = INFECTED_MINUS;
+					atomicAdd(&cellCounts[SUSCEPTIBLE],    -1);
+					atomicAdd(&cellCounts[INFECTED_MINUS],  1);
+				}
+			}
 			break;
 
 		case INFECTED_PLUS:
@@ -301,7 +290,11 @@ __global__ void tissue_update(Cell *cells, int numCells,
 			cell->dsRNA += k_syn * virions - k_deg * cell->dsRNA;
 			cell->IFN += pFmax * cell->dsRNA;
 			if (cell->infectingTime <= 0)
+			{
 				cell->state = DEAD;
+				atomicAdd(&cellCounts[INFECTED_PLUS], -1);
+				atomicAdd(&cellCounts[DEAD],           1);
+			}
 			break;
 
 		case INFECTED_MINUS:
@@ -309,7 +302,11 @@ __global__ void tissue_update(Cell *cells, int numCells,
 			cell->virions += virionProduction(cell->internalTime++);
 			// No dsRNA, no IFN production for minus-strand infected cells
 			if (cell->infectingTime <= 0)
+			{
 				cell->state = DEAD;
+				atomicAdd(&cellCounts[INFECTED_MINUS], -1);
+				atomicAdd(&cellCounts[DEAD],            1);
+			}
 			break;
 
 		default:

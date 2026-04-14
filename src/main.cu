@@ -276,6 +276,10 @@ int main(int argc, char *argv[])
 	double *tissueSum = (double*)calloc(numMeasures * 7, sizeof(double));
 	double *tissueSqSum = (double*)calloc(numMeasures * 7, sizeof(double));
 
+	// Cell state counters (indexed by CellState enum): updated atomically by GPU
+	int *cellCounts;
+	cudaMallocManaged(&cellCounts, 6 * sizeof(int));
+
 	FILE *fSnap = NULL;
 	if (options.numReplicates == 1 && options.printSnap)
 	{
@@ -306,10 +310,13 @@ int main(int argc, char *argv[])
 		curandSetPseudoRandomGeneratorSeed(gen, seed);
 
 		// Reset cells state
+		memset(cellCounts, 0, 6 * sizeof(int));
 		for (int i=0; i<numCells; i++)
 		{
 			if (ranUni.doub() < options.nonPermProb) cells[i].state = NONPERMISSIVE;
 			else cells[i].state = SUSCEPTIBLE;
+		
+			cellCounts[cells[i].state]++;
 
 			cells[i].virions = 0.0f;
 			cells[i].dsRNA = 0.0f;
@@ -317,7 +324,7 @@ int main(int argc, char *argv[])
 			cells[i].infectingTime = 60*ranInfecting.dev(); // Convert to minutes
 			cells[i].internalTime = 0;
 		}
-	
+
 		int ind = 0;
 		for (int i=0; i<options.numInfections; i++)
 		{
@@ -337,7 +344,6 @@ int main(int argc, char *argv[])
 		/*==========================================*/
 
 		int measureIdx = 0;
-		double metrics[7];
 		int progressInterval = options.timeSteps / 10;
 		if (progressInterval == 0) progressInterval = 1;
 		for (int step=0; step<=options.timeSteps; step++)
@@ -346,37 +352,23 @@ int main(int argc, char *argv[])
 
 			if (step % options.measureInterval == 0)
 			{
-				memset(metrics, 0, sizeof(metrics));
-				tissue_metrics(cells, numCells, metrics);
-				for (int m=0; m<7; m++)
-				{
-					tissueSum[measureIdx*7 + m] += metrics[m];
-					tissueSqSum[measureIdx*7 + m] += metrics[m]*metrics[m];
-				}
-				measureIdx++;
-				
+				tissue_metrics(cells, numCells, cellCounts, tissueSum, tissueSqSum, measureIdx++);
+
 				if (fCell) fprintf(fCell, "%d,%f,%f\n", step, cells[ind].virions, cells[ind].IFN);
 			}
 
 			// Print snapshots only if 1 replicate and printSnap is ON
 			if (fSnap && step % options.snapInterval == 0)
 			{
-				if (options.printSnap == 2)
-				{
-					if (options.snapInterval != options.measureInterval)
-					{
-						memset(metrics, 0, sizeof(metrics));
-						tissue_metrics(cells, numCells, metrics);
-					}
-					print_infectedSnapshots(cells, numCells, fSnap, int(metrics[4]));
-				}
+				if (options.printSnap == 2) print_infectedSnapshots(cells, numCells, fSnap,
+												cellCounts[INFECTED_PLUS] + cellCounts[INFECTED_MINUS]);
 				else print_tissueSnapshots(cells, numCells, fSnap);
 			}
 
 			// Generate GPU random numbers
 			curandGenerateUniform(gen, d_ranUni, numCells);
 
-			tissue_update<<<blks, ths>>>(cells, numCells, options.IFNcellProb, d_ranUni);
+			tissue_update<<<blks, ths>>>(cells, numCells, cellCounts, options.IFNcellProb, d_ranUni);
 			tissue_diffusion<<<blks, ths>>>(cells, numCells, options.virionDiffusion,
 				options.virionClearance, options.IFNdiffusion, options.IFNclearance);
 
@@ -423,6 +415,7 @@ int main(int argc, char *argv[])
 	// Clean up
 	cudaFree(cells);
 	cudaFree(d_ranUni);
+	cudaFree(cellCounts);
 	curandDestroyGenerator(gen);
 	free(tissueSum);
 	free(tissueSqSum);
