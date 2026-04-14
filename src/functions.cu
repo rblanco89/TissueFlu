@@ -194,6 +194,38 @@ __global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 
 // ==================================================================
 
+__global__ void compute_weights(Cell *cells, int numCells)
+{
+	int ind = threadIdx.x + blockIdx.x*blockDim.x;
+	if (ind >= numCells) return;
+
+	float3 ri = cells[ind].position;
+	int numNeighbors = cells[ind].numNeighbors;
+
+	for (int j = 0; j < numNeighbors; j++)
+	{
+		int ind_j = cells[ind].neighbors[j];
+		float3 rj = cells[ind_j].position;
+
+		float dx = ri.x - rj.x;
+		float dy = ri.y - rj.y;
+		float dz = ri.z - rj.z;
+		float dist2 = dx*dx + dy*dy + dz*dz;
+
+		if (dist2 == 0.0f)
+		{
+			printf("Warning: cell %d and neighbor %d are at the same position\n", ind, ind_j);
+			cells[ind].weights[j] = 0.0f;
+		}
+		else
+		{
+			cells[ind].weights[j] = 1.0f / dist2;
+		}
+	}
+}
+
+// ==================================================================
+
 __device__ float hillFun(float x, float K, float n)
 {
 	if (x <= 0.0f) return 0.0f;

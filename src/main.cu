@@ -20,6 +20,7 @@ int main(int argc, char *argv[])
 	const char *config_file = NULL;
 	const char *structure_file = NULL;
 	const char *output_dir = "results";
+	const char *neighbors_file = NULL;
 
 	/*==========================================*/
 	// Parse command-line arguments
@@ -44,6 +45,11 @@ int main(int argc, char *argv[])
 			output_dir = argv[++i];
 			i++;
 		}
+		else if (strncmp(argv[i], "--neighbors", 11) == 0)
+		{
+			neighbors_file = argv[++i];
+			i++;
+		}
 		else
 		{
 			fprintf(stderr, "Unknown argument: %s\n", argv[i]);
@@ -55,10 +61,12 @@ int main(int argc, char *argv[])
 	if (config_file == NULL || structure_file == NULL)
 	{
 		fprintf(stderr,
-				"Usage: %s --config FILE --structure FILE [--output DIR]\n"
+				"Usage: %s --config FILE --structure FILE [--output DIR] [--neighbors FILE]\n"
 				"  --config     : path to configuration file\n"
 				"  --structure  : path to cell positions file (e.g., CSV)\n"
-				"  --output     : directory where results will be written (default: results)\n",
+				"  --output     : directory where results will be written (default: results)\n"
+				"  --neighbors  : path to precomputed neighbor list; if omitted a new list is\n"
+				"                 built and saved next to the structure file\n",
 				argv[0]);
 		return 1;
 	}
@@ -141,11 +149,97 @@ int main(int argc, char *argv[])
 	int ths = (numCells < THS_MAX) ? nextPow2(numCells) : THS_MAX;
 	int blks = 1 + (numCells - 1)/ths;
 
-	printf("Creating list of neighbors...\n");
+	// Derive auto-save path for neighbor list: <structure_base>_neighbors<ext>
+	char neigh_path_buf[512];
+	{
+		const char *dot = strrchr(structure_file, '.');
+		if (dot && dot != structure_file)
+		{
+			int base_len = (int)(dot - structure_file);
+			snprintf(neigh_path_buf, sizeof(neigh_path_buf),
+					 "%.*s_neighbors%s", base_len, structure_file, dot);
+		}
+		else
+		{
+			snprintf(neigh_path_buf, sizeof(neigh_path_buf), "%s_neighbors", structure_file);
+		}
+	}
 
-	// Find neighbors and store in cell structure
-	build_neighbors<<<blks, ths>>>(cells, numCells, options.neighRadius);
-	cudaDeviceSynchronize();
+	if (neighbors_file == NULL)
+	{
+		printf("Creating list of neighbors...\n");
+
+		// Find neighbors, store indices and 1/d² weights in cell structure
+		build_neighbors<<<blks, ths>>>(cells, numCells, options.neighRadius);
+		cudaDeviceSynchronize();
+
+		// Save neighbor list next to the structure file
+		printf("Saving neighbor list to %s...\n", neigh_path_buf);
+		FILE *fNeigh = fopen(neigh_path_buf, "w");
+		if (!fNeigh)
+		{
+			fprintf(stderr, "Warning: could not save neighbor list to %s\n", neigh_path_buf);
+		}
+		else
+		{
+			for (int c = 0; c < numCells; c++)
+			{
+				fprintf(fNeigh, "%d", cells[c].numNeighbors);
+				for (int n = 0; n < cells[c].numNeighbors; n++)
+					fprintf(fNeigh, ",%d", cells[c].neighbors[n]);
+				fprintf(fNeigh, "\n");
+			}
+			fclose(fNeigh);
+		}
+	}
+	else
+	{
+		FILE *fNeigh = fopen(neighbors_file, "r");
+		if (!fNeigh)
+		{
+			fprintf(stderr, "Error: could not open neighbor file %s\n", neighbors_file);
+			cudaFree(cells);
+			cudaFree(d_ranUni);
+			curandDestroyGenerator(gen);
+			return 1;
+		}
+
+		char nline[MAX_NEIGHBORS * 8 + 32];
+		for (int c = 0; c < numCells; c++)
+		{
+			if (fgets(nline, sizeof(nline), fNeigh) == NULL)
+			{
+				fprintf(stderr, "Error: neighbor file too short at cell %d\n", c);
+				fclose(fNeigh);
+				cudaFree(cells);
+				cudaFree(d_ranUni);
+				curandDestroyGenerator(gen);
+				return 1;
+			}
+			char *tok = strtok(nline, ",\n");
+			cells[c].numNeighbors = atoi(tok);
+			for (int n = 0; n < cells[c].numNeighbors; n++)
+			{
+				tok = strtok(NULL, ",\n");
+				if (tok == NULL)
+				{
+					fprintf(stderr, "Error: malformed neighbor entry for cell %d\n", c);
+					fclose(fNeigh);
+					cudaFree(cells);
+					cudaFree(d_ranUni);
+					curandDestroyGenerator(gen);
+					return 1;
+				}
+				cells[c].neighbors[n] = atoi(tok);
+			}
+		}
+		fclose(fNeigh);
+		printf("Loaded neighbor list for %d cells\n", numCells);
+
+		// Compute 1/d² weights from the loaded neighbor indices
+		compute_weights<<<blks, ths>>>(cells, numCells);
+		cudaDeviceSynchronize();
+	}
 
 	float maxDiffusion = stabilityCondition(cells, numCells);
 	if (maxDiffusion < options.virionDiffusion || maxDiffusion < options.IFNdiffusion)

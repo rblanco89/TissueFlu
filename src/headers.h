@@ -65,6 +65,7 @@ __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap);
 __host__ void print_infectedSnapshots(Cell *cells, int numCells, FILE *fSnap, int numInf);
 
 __global__ void build_neighbors(Cell *cells, int numCells, float cutoff);
+__global__ void compute_weights(Cell *cells, int numCells);
 __global__ void tissue_update(Cell *cells, int numCells, float IFNcellProb, float *d_ranUni);
 __global__ void tissue_diffusion(Cell *cells, int numCells, float virionDiffusion,
 		float virionClearance, float IFNdiffusion, float IFNclearance);
