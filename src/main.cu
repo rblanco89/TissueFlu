@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 #include <cuda_runtime.h>
 #include <curand.h>
@@ -17,6 +19,7 @@ int main(int argc, char *argv[])
 {
 	const char *config_file = NULL;
 	const char *structure_file = NULL;
+	const char *output_dir = "results";
 
 	/*==========================================*/
 	// Parse command-line arguments
@@ -36,6 +39,11 @@ int main(int argc, char *argv[])
 			structure_file = argv[++i];
 			i++;
 		}
+		else if (strncmp(argv[i], "--output", 8) == 0)
+		{
+			output_dir = argv[++i];
+			i++;
+		}
 		else
 		{
 			fprintf(stderr, "Unknown argument: %s\n", argv[i]);
@@ -47,9 +55,10 @@ int main(int argc, char *argv[])
 	if (config_file == NULL || structure_file == NULL)
 	{
 		fprintf(stderr,
-				"Usage: %s --config FILE --structure FILE\n"
+				"Usage: %s --config FILE --structure FILE [--output DIR]\n"
 				"  --config     : path to configuration file\n"
-				"  --structure  : path to cell positions file (e.g., CSV)\n",
+				"  --structure  : path to cell positions file (e.g., CSV)\n"
+				"  --output     : directory where results will be written (default: results)\n",
 				argv[0]);
 		return 1;
 	}
@@ -148,6 +157,24 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	// Create output directory if it does not exist
+	if (mkdir(output_dir, 0755) != 0 && errno != EEXIST)
+	{
+		fprintf(stderr, "Error: could not create output directory %s\n", output_dir);
+		cudaFree(cells);
+		cudaFree(d_ranUni);
+		curandDestroyGenerator(gen);
+		return 1;
+	}
+
+	// Build output file paths
+	char path_snapshots[512], path_cellState[512];
+	char path_tissueAvg[512], path_tissueStd[512];
+	snprintf(path_snapshots, sizeof(path_snapshots), "%s/snapshots.xyz",       output_dir);
+	snprintf(path_cellState, sizeof(path_cellState), "%s/cellState.csv",       output_dir);
+	snprintf(path_tissueAvg, sizeof(path_tissueAvg), "%s/tissueState_avg.csv", output_dir);
+	snprintf(path_tissueStd, sizeof(path_tissueStd), "%s/tissueState_std.csv", output_dir);
+
 	// Prepare for result accumulation
 	int numMeasures = options.timeSteps / options.measureInterval + 1;
 
@@ -158,15 +185,15 @@ int main(int argc, char *argv[])
 	FILE *fSnap = NULL;
 	if (options.numReplicates == 1 && options.printSnap)
 	{
-		fSnap = fopen("results/snapshots.xyz", "w");
-		if (!fSnap) fprintf(stderr, "Warning: could not open results/snapshots.xyz for writing\n");
+		fSnap = fopen(path_snapshots, "w");
+		if (!fSnap) fprintf(stderr, "Warning: could not open %s for writing\n", path_snapshots);
 	}
 
 	FILE *fCell = NULL;
 	if (options.numReplicates == 1)
 	{
-		fCell = fopen("results/cellState.csv", "w");
-		if (!fCell) fprintf(stderr, "Warning: could not open results/cellData.csv for writing\n");
+		fCell = fopen(path_cellState, "w");
+		if (!fCell) fprintf(stderr, "Warning: could not open %s for writing\n", path_cellState);
 		fprintf(fCell, "Time,ViralLoad,IFN\n");
 	}
 
@@ -270,8 +297,8 @@ int main(int argc, char *argv[])
 	// Finalize results: Average and Std Dev
 	/*==========================================*/
 
-	FILE *fTavg = fopen("results/tissueState_avg.csv", "w");
-	FILE *fTstd = fopen("results/tissueState_std.csv", "w");
+	FILE *fTavg = fopen(path_tissueAvg, "w");
+	FILE *fTstd = fopen(path_tissueStd, "w");
 	if (fTavg && fTstd)
 	{
 		fprintf(fTavg, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive\n");
