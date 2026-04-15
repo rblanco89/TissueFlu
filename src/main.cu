@@ -142,7 +142,7 @@ int main(int argc, char *argv[])
 	// Set GPU random generator
 	float *d_ranUni;
 	curandGenerator_t gen;
-	cudaMalloc(&d_ranUni, numCells*sizeof(float)); // Array only for GPU
+	cudaMalloc(&d_ranUni, 3*numCells*sizeof(float)); // 3 non-overlapping slots per cell
 	curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_MTGP32);
 
 	// Estimate the number of threads and blocks for the GPU
@@ -263,11 +263,12 @@ int main(int argc, char *argv[])
 
 	// Build output file paths
 	char path_snapshots[512], path_cellState[512];
-	char path_tissueAvg[512], path_tissueStd[512];
+	char path_tissueAvg[512], path_tissueStd[512], path_auc[512];
 	snprintf(path_snapshots, sizeof(path_snapshots), "%s/snapshots.xyz",       output_dir);
 	snprintf(path_cellState, sizeof(path_cellState), "%s/cellState.csv",       output_dir);
 	snprintf(path_tissueAvg, sizeof(path_tissueAvg), "%s/tissueState_avg.csv", output_dir);
 	snprintf(path_tissueStd, sizeof(path_tissueStd), "%s/tissueState_std.csv", output_dir);
+	snprintf(path_auc,       sizeof(path_auc),       "%s/auc_results.csv",     output_dir);
 
 	// Prepare for result accumulation
 	int numMeasures = options.timeSteps / options.measureInterval + 1;
@@ -279,6 +280,15 @@ int main(int argc, char *argv[])
 	// Cell state counters (indexed by CellState enum): updated atomically by GPU
 	int *cellCounts;
 	cudaMallocManaged(&cellCounts, 6 * sizeof(int));
+
+	// Shadow arrays for race-free diffusion (read-only snapshots of virions and IFN)
+	float *virions_old, *IFN_old;
+	cudaMalloc(&virions_old, numCells*sizeof(float));
+	cudaMalloc(&IFN_old,     numCells*sizeof(float));
+
+	FILE *fAUC = fopen(path_auc, "w");
+	if (!fAUC) fprintf(stderr, "Warning: could not open %s for writing\n", path_auc);
+	else fprintf(fAUC, "Replicate,AUC_Virus,AUC_IFN\n");
 
 	FILE *fSnap = NULL;
 	if (options.numReplicates == 1 && options.printSnap)
@@ -344,6 +354,8 @@ int main(int argc, char *argv[])
 		/*==========================================*/
 
 		int measureIdx = 0;
+		double aucVirus = 0.0, aucIFN = 0.0;
+		double prevVirus = 0.0, prevIFN = 0.0;
 		int progressInterval = options.timeSteps / 10;
 		if (progressInterval == 0) progressInterval = 1;
 		for (int step=0; step<=options.timeSteps; step++)
@@ -352,7 +364,9 @@ int main(int argc, char *argv[])
 
 			if (step % options.measureInterval == 0)
 			{
-				tissue_metrics(cells, numCells, cellCounts, tissueSum, tissueSqSum, measureIdx++);
+				tissue_metrics(cells, numCells, cellCounts, tissueSum, tissueSqSum, measureIdx++,
+							   &aucVirus, &aucIFN, &prevVirus, &prevIFN,
+							   options.measureInterval);
 
 				if (fCell) fprintf(fCell, "%d,%f,%f\n", step, cells[ind].virions, cells[ind].IFN);
 			}
@@ -365,19 +379,26 @@ int main(int argc, char *argv[])
 				else print_tissueSnapshots(cells, numCells, fSnap);
 			}
 
-			// Generate GPU random numbers
-			curandGenerateUniform(gen, d_ranUni, numCells);
+			// Generate GPU random numbers (3 non-overlapping draws per cell)
+			curandGenerateUniform(gen, d_ranUni, 3*numCells);
 
 			tissue_update<<<blks, ths>>>(cells, numCells, cellCounts, options.IFNcellProb, d_ranUni);
-			tissue_diffusion<<<blks, ths>>>(cells, numCells, options.virionDiffusion,
-				options.virionClearance, options.IFNdiffusion, options.IFNclearance);
+
+			copy_fields<<<blks, ths>>>(cells, virions_old, IFN_old, numCells);
+			tissue_diffusion<<<blks, ths>>>(cells, virions_old, IFN_old, numCells,
+				options.virionDiffusion, options.virionClearance,
+				options.IFNdiffusion, options.IFNclearance);
 
 			cudaDeviceSynchronize();
 		}
 
 		if (fCell) fclose(fCell);
 		if (fSnap) fclose(fSnap);
+
+		if (fAUC) fprintf(fAUC, "%d,%e,%e\n", rep+1, aucVirus, aucIFN);
 	}
+
+	if (fAUC) fclose(fAUC);
 
 	/*==========================================*/
 	// Finalize results: Average and Std Dev
@@ -414,6 +435,8 @@ int main(int argc, char *argv[])
 
 	// Clean up
 	cudaFree(cells);
+	cudaFree(virions_old);
+	cudaFree(IFN_old);
 	cudaFree(d_ranUni);
 	cudaFree(cellCounts);
 	curandDestroyGenerator(gen);

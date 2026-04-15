@@ -38,7 +38,9 @@ __host__  float stabilityCondition(Cell *cells, int numCells)
 // ==================================================================
 
 __host__ void tissue_metrics(Cell *cells, int numCells, int *cellCounts,
-                             double *tissueSum, double *tissueSqSum, int measureIdx)
+                             double *tissueSum, double *tissueSqSum, int measureIdx,
+                             double *aucVirus, double *aucIFN,
+                             double *prevVirus, double *prevIFN, int measureInterval)
 {
 	double val[7];
 
@@ -64,6 +66,15 @@ __host__ void tissue_metrics(Cell *cells, int numCells, int *cellCounts,
 		tissueSum[base + m]   += val[m];
 		tissueSqSum[base + m] += val[m] * val[m];
 	}
+
+	if (measureIdx > 0)
+	{
+		*aucVirus += 0.5 * (viralLoad + *prevVirus) * measureInterval;
+		*aucIFN   += 0.5 * (IFNlevel  + *prevIFN)  * measureInterval;
+	}
+
+	*prevVirus = viralLoad;
+	*prevIFN   = IFNlevel;
 }
 
 // ==================================================================
@@ -265,9 +276,9 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 			effInfProb = infecProb * suppProb;
 			// effInfProb = infecProb;
 			// effInfProb = 0.0f;
-			if (effInfProb > ranUni[(ind+1)%numCells])
+			if (effInfProb > ranUni[ind + numCells])
 			{
-				if (ranUni[(ind+2)%numCells] < IFNcellProb)
+				if (ranUni[ind + 2*numCells] < IFNcellProb)
 				{
 					cell->state = INFECTED_PLUS;
 					atomicAdd(&cellCounts[SUSCEPTIBLE],    -1);
@@ -316,35 +327,52 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 
 // ==================================================================
 
-__global__ void tissue_diffusion(Cell *cells, int numCells,
-								 float virionDiffusion, float virionClearance,
+__global__ void copy_fields(Cell *cells, float *virions_old, float *IFN_old, int numCells)
+{
+	int ind = threadIdx.x + blockIdx.x*blockDim.x;
+	if (ind >= numCells) return;
+
+	virions_old[ind] = cells[ind].virions;
+	IFN_old[ind]     = cells[ind].IFN;
+}
+
+// ==================================================================
+
+__global__ void tissue_diffusion(Cell *cells, const float *virions_old, const float *IFN_old,
+								 int numCells, float virionDiffusion, float virionClearance,
 								 float IFNdiffusion, float IFNclearance)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
 
-	Cell cell = cells[ind];
+	float virions_i = virions_old[ind];
+	float IFN_i     = IFN_old[ind];
+
+	// Read neighbor/weight layout from the (unchanged) cells array
+	int numNeighbors = cells[ind].numNeighbors;
+	int *neighbors = cells[ind].neighbors;
+	float *weights = cells[ind].weights;
 
 	// MODEL 1
 	float diffVirions = 0.0;
 	float diffIFN = 0.0;
 
-	for (int j=0; j<cell.numNeighbors; j++)
+	for (int j=0; j<numNeighbors; j++)
 	{
-		int ind_j = cell.neighbors[j];
-		float w = cell.weights[j];
+		int ind_j = neighbors[j];
+		float w   = weights[j];
 
-		diffVirions += w*(cells[ind_j].virions - cell.virions);
-		diffIFN += w*(cells[ind_j].IFN - cell.IFN);
+		diffVirions += w*(virions_old[ind_j] - virions_i);
+		diffIFN += w*(IFN_old[ind_j] - IFN_i);
 	}
 
 	// Update count of virions for each cell
 	float diffusedVirions = virionDiffusion*diffVirions;
-	cells[ind].virions = (1.0 - virionClearance)*(cell.virions + diffusedVirions);
+	cells[ind].virions = (1.0 - virionClearance)*(virions_i + diffusedVirions);
 
 	// Update IFN for each cell
 	float diffusedIFN = IFNdiffusion*diffIFN;
-	cells[ind].IFN = (1.0 - IFNclearance)*(cell.IFN + diffusedIFN);
+	cells[ind].IFN = (1.0 - IFNclearance)*(IFN_i + diffusedIFN);
 
 	// MODEL 2 (New Mexico Approach)
 	//float meanVirions = cell.virions;
