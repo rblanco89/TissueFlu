@@ -365,8 +365,7 @@ int main(int argc, char *argv[])
 			if (step % options.measureInterval == 0)
 			{
 				tissue_metrics(cells, numCells, cellCounts, tissueSum, tissueSqSum, measureIdx++,
-							   &aucVirus, &aucIFN, &prevVirus, &prevIFN,
-							   options.measureInterval);
+							   &aucVirus, &aucIFN, &prevVirus, &prevIFN, options.measureInterval);
 
 				if (fCell) fprintf(fCell, "%d,%f,%f\n", step, cells[ind].virions, cells[ind].IFN);
 			}
