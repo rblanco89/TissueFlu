@@ -25,12 +25,20 @@ __host__ long nextPow2(long x)
 __host__  float stabilityCondition(Cell *cells, int numCells)
 {
 	float maxWeightSum = 0.0f;
+	int minN = MAX_NEIGHBORS, maxN = 0;
+	long totalN = 0;
 	for (int i = 0; i < numCells; i++)
 	{
 		float ws = 0.0f;
-		for (int j = 0; j < cells[i].numNeighbors; j++) ws += cells[i].weights[j];
+		int n = cells[i].numNeighbors;
+		minN = min(minN, n);
+		maxN = max(maxN, n);
+		totalN += n;
+		for (int j = 0; j < n; j++) ws += cells[i].weights[j];
 		maxWeightSum = fmaxf(maxWeightSum, ws);
 	}
+
+	printf("Neighbors: min = %d, max = %d, avg = %.1f\n", minN, maxN, (float)totalN/numCells);
 
 	return 1.0f/maxWeightSum;
 }
@@ -162,7 +170,7 @@ __global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 		// Add j to i's neighbor list
 		if (numNeighbors < MAX_NEIGHBORS)
 		{
-			w = 1.0f / dist2;
+			// w = 1.0f / dist2; // weight based on inverse distance squared
 			// weightSum += w;
 			cells[ind].neighbors[numNeighbors] = ind_j;
 			cells[ind].weights[numNeighbors] = w;
