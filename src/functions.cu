@@ -170,7 +170,7 @@ __global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 		// Add j to i's neighbor list
 		if (numNeighbors < MAX_NEIGHBORS)
 		{
-			// w = 1.0f / dist2; // weight based on inverse distance squared
+			w = 1.0f / dist2; // weight based on inverse distance squared
 			// weightSum += w;
 			cells[ind].neighbors[numNeighbors] = ind_j;
 			cells[ind].weights[numNeighbors] = w;

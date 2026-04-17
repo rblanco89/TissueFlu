@@ -19,7 +19,7 @@ int main(int argc, char *argv[])
 {
 	const char *config_file = NULL;
 	const char *structure_file = NULL;
-	const char *output_dir = "results";
+	const char *output_dir = ".";
 	const char *neighbors_file = NULL;
 
 	/*==========================================*/
@@ -157,11 +157,13 @@ int main(int argc, char *argv[])
 		{
 			int base_len = (int)(dot - structure_file);
 			snprintf(neigh_path_buf, sizeof(neigh_path_buf),
-					 "%.*s_neighbors%s", base_len, structure_file, dot);
+					"%.*s_neighbors_r%d%s", base_len, structure_file,
+					int(options.neighRadius), dot);
 		}
 		else
 		{
-			snprintf(neigh_path_buf, sizeof(neigh_path_buf), "%s_neighbors", structure_file);
+			snprintf(neigh_path_buf, sizeof(neigh_path_buf), "%s_neighbors_r%d",
+					 structure_file, int(options.neighRadius));
 		}
 	}
 

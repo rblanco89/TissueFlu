@@ -1,4 +1,4 @@
 *.o
 *.xyz
-aeroflu
+tissueFlu
 results/*

@@ -12,7 +12,7 @@ SRCS_CU = $(wildcard $(SRC_DIR)/*.cu)
 OBJS_C = $(SRCS_C:.c=.o)
 OBJS_CU = $(SRCS_CU:.cu=.o)
 
-TARGET = aeroflu
+TARGET = tissueFlu
 
 # === Build Rules ===
 all: $(TARGET)
