@@ -26,7 +26,6 @@ int main(int argc, char *argv[])
 	// Parse command-line arguments
 	/*==========================================*/
 
-	// for (int i = 1; i < argc; i++)
 	int i = 1;
 	while (i < argc)
 	{
