@@ -382,7 +382,8 @@ int main(int argc, char *argv[])
 			// Generate GPU random numbers (3 non-overlapping draws per cell)
 			curandGenerateUniform(gen, d_ranUni, 3*numCells);
 
-			tissue_update<<<blks, ths>>>(cells, numCells, cellCounts, options.IFNcellProb, d_ranUni);
+			tissue_update<<<blks, ths>>>(cells, numCells, cellCounts, options.IFNcellProb,
+				options.flagRefrac, options.flagSupp, d_ranUni);
 
 			copy_fields<<<blks, ths>>>(cells, virions_old, IFN_old, numCells);
 			tissue_diffusion<<<blks, ths>>>(cells, virions_old, IFN_old, numCells,

@@ -12,6 +12,9 @@ typedef struct
 	int snapInterval;
 	int measureInterval;
 
+	int flagRefrac; // toggle: 1 = refractory mechanism active, 0 = off
+	int flagSupp; // toggle: 1 = infection suppression active, 0 = off
+
 	float neighRadius;
 	float nonPermProb;
 	float initialVirions;
@@ -71,7 +74,7 @@ __global__ void build_neighbors(Cell *cells, int numCells, float cutoff);
 __global__ void compute_weights(Cell *cells, int numCells);
 __global__ void copy_fields(Cell *cells, float *virions_old, float *IFN_old, int numCells);
 __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts, float IFNcellProb,
-								float *d_ranUni);
+								int flagRefrac, int flagSupp, float *d_ranUni);
 __global__ void tissue_diffusion(Cell *cells, const float *virions_old, const float *IFN_old,
 								int numCells, float virionDiffusion, float virionClearance,
 								float IFNdiffusion, float IFNclearance);

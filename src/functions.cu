@@ -249,7 +249,8 @@ __device__ float virionProduction(int time)
 // ==================================================================
 
 __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
-							  float IFNcellProb, float *ranUni)
+							  float IFNcellProb, int flagRefrac, int flagSupp,
+							  float *ranUni)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
@@ -262,28 +263,32 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 	Cell *cell = &cells[ind];
 	switch (cell->state)
 	{
-		// case NONPERMISSIVE:
-		// 	refracProb = hillFun(cell->IFN, 10.0f, 3.0f);
-		// 	if (refracProb > ranUni[ind]) cell->state = REFRACTORY;
-		// 	break;
+		//case NONPERMISSIVE:
+		//	if (flagRefrac)
+		//	{
+		//		refracProb = hillFun(cell->IFN, 10.0f, 3.0f);
+		// 		if (refracProb > ranUni[ind]) cell->state = REFRACTORY;
+		// 		break;
+		//	}
 
 		case SUSCEPTIBLE:
-			refracProb = hillFun(cell->IFN, 10.0f, 3.0f); // refractory mechanism
-			// refracProb = 0.0f;
-			if (refracProb > ranUni[ind])
+			if (flagRefrac)
 			{
-				cell->state = REFRACTORY;
-				atomicAdd(&cellCounts[SUSCEPTIBLE], -1);
-				atomicAdd(&cellCounts[REFRACTORY],   1);
-				break;
+				refracProb = hillFun(cell->IFN, 10.0f, 3.0f); // refractory mechanism
+				if (refracProb > ranUni[ind])
+				{
+					cell->state = REFRACTORY;
+					atomicAdd(&cellCounts[SUSCEPTIBLE], -1);
+					atomicAdd(&cellCounts[REFRACTORY],   1);
+					break;
+				}
 			}
 
 			logVirions = log10(cell->virions + 1.0f);
 			infecProb = hillFun(logVirions, 3.0f, 3.0f); // infection mechanism
-			suppProb = 1.0f - hillFun(cell->IFN, 5.0f, 3.0f); // suppression mechanism
+			if (flagSupp) suppProb = 1.0f - hillFun(cell->IFN, 5.0f, 3.0f); // suppression mechanism
+			else suppProb = 1.0f;
 			effInfProb = infecProb * suppProb;
-			// effInfProb = infecProb;
-			// effInfProb = 0.0f;
 			if (effInfProb > ranUni[ind + numCells])
 			{
 				if (ranUni[ind + 2*numCells] < IFNcellProb)

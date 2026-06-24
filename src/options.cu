@@ -22,6 +22,8 @@ void parse_options(const char *filename)
 	options.snapInterval = 100;
 	options.measureInterval = 100;
 
+	options.flagRefrac = 1; // default: refractory mechanism ON
+	options.flagSupp = 1; // default: infection suppression ON
 	
 	FILE *file = fopen(filename, "r");
 	if (!file)
@@ -56,6 +58,10 @@ void parse_options(const char *filename)
 				options.measureInterval = atoi(value);
 			else if (strcmp(key, "numReplicates ") == 0)
 				options.numReplicates = atoi(value);
+			else if (strcmp(key, "flagRefrac ") == 0)
+				options.flagRefrac = atoi(value);
+			else if (strcmp(key, "flagSupp ") == 0)
+				options.flagSupp = atoi(value);
 
 			else if (strcmp(key, "neighRadius ") == 0)
 				options.neighRadius = atof(value);
