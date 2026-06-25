@@ -12,7 +12,7 @@ void parse_parameters(const char *filename)
 	params.numInfections = 1;
 	params.initialVirions = 1.0f;
 	params.numReplicates = 1;
-	params.neighRadius = 5.0f;
+	params.neighRadius = 2.0f;
 
 	params.infectingPeriod = 1800; // 30 hours
 	params.nonPermProb = 0.0f;
@@ -33,6 +33,11 @@ void parse_parameters(const char *filename)
 	params.K_bp = 5.0f; // IFN half-max for BP mechanism (IFN)
 	params.K_pf = 5.0f; // IFN half-max for PF mechanism (IFN)
 	params.alpha_pf = 1.0f; // PF mechanism enhancement factor (unitless)
+
+	params.virionDiffusion = 0.01f; // virion diffusion coefficient (cell diam^2 min^-1)
+	params.virionClearance = 0.0115f; // virion clearance rate (min^-1)
+	params.IFNdiffusion = 0.04f; // IFN diffusion coefficient (cell diam^2 min^-1)
+	params.IFNclearance = 0.005760f; // IFN clearance rate (min^-1)
 
 	params.printSnap = 0;
 	params.snapInterval = 100;
