@@ -1,0 +1,116 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "headers.h"
+
+Params params;  // global struct
+
+void parse_parameters(const char *filename)
+{
+	// Set default values
+	params.timeSteps = 1000;
+	params.numInfections = 1;
+	params.initialVirions = 1.0f;
+	params.numReplicates = 1;
+	params.neighRadius = 5.0f;
+
+	params.infectingPeriod = 1800; // 30 hours
+	params.nonPermProb = 0.0f;
+	params.IFNcellProb = 0.0f;
+
+	params.pFmax = 0.00025f; // max IFN production rate (IFN min^-1 dsRNA^-1)
+	params.k_syn = 1.0f; // dsRNA synthesis rate (dsRNA min^-1 virions^-1)
+	params.k_deg = 0.15f / 60.0f; // dsRNA degradation rate (min^-1)
+
+	params.flagRefrac = 0; // default: refractory mechanism OFF
+	params.flagSupp = 0; // default: infection suppression OFF
+	params.flagBP = 0; // default: BP mechanism OFF
+	params.flagPF = 0; // default: PF mechanism OFF
+
+	params.K_r = 10.0f; // IFN half-max for refractory mechanism (IFN)
+	params.K_s = 5.0f; // IFN half-max for suppression mechanism (IFN)
+	params.K_v = 3.0f; // virion half-max for infection mechanism (log10(virions))
+	params.K_bp = 5.0f; // IFN half-max for BP mechanism (IFN)
+	params.K_pf = 5.0f; // IFN half-max for PF mechanism (IFN)
+	params.alpha_pf = 1.0f; // PF mechanism enhancement factor (unitless)
+
+	params.printSnap = 0;
+	params.snapInterval = 100;
+	params.measureInterval = 100;
+	
+	FILE *file = fopen(filename, "r");
+	if (!file)
+	{
+        	perror("Could not open config file");
+        	exit(1);
+	}
+
+	char line[256];
+	while (fgets(line, sizeof(line), file))
+	{
+		char key[64], value[128];
+
+		if (line[0] == '#' || line[0] == '\n')
+			continue; // skip comments and blank lines
+
+		if (sscanf(line, "%[^=]=%s", key, value) == 2)
+		{
+			if (strcmp(key, "timeSteps ") == 0)
+				params.timeSteps = atoi(value);
+			else if (strcmp(key, "numInfections ") == 0)
+				params.numInfections = atoi(value);
+			else if (strcmp(key, "infectingPeriod ") == 0)
+				params.infectingPeriod = atoi(value);
+			else if (strcmp(key, "randSeed ") == 0)
+				params.ranSeed = atoi(value);
+			else if (strcmp(key, "printSnapshots ") == 0)
+				params.printSnap = atoi(value);
+			else if (strcmp(key, "snapshotInterval ") == 0)
+				params.snapInterval = atoi(value);
+			else if (strcmp(key, "measureInterval ") == 0)
+				params.measureInterval = atoi(value);
+			else if (strcmp(key, "numReplicates ") == 0)
+				params.numReplicates = atoi(value);
+			else if (strcmp(key, "flagRefrac ") == 0)
+				params.flagRefrac = atoi(value);
+			else if (strcmp(key, "flagSupp ") == 0)
+				params.flagSupp = atoi(value);
+			else if (strcmp(key, "flagBP ") == 0)
+				params.flagBP = atoi(value);
+			else if (strcmp(key, "flagPF ") == 0)
+				params.flagPF = atoi(value);
+			else if (strcmp(key, "K_r ") == 0)
+				params.K_r = atof(value);
+			else if (strcmp(key, "K_s ") == 0)
+				params.K_s = atof(value);
+			else if (strcmp(key, "K_v ") == 0)
+				params.K_v = atof(value);
+			else if (strcmp(key, "K_bp ") == 0)
+				params.K_bp = atof(value);
+			else if (strcmp(key, "K_pf ") == 0)
+				params.K_pf = atof(value);
+			else if (strcmp(key, "alpha_pf ") == 0)
+				params.alpha_pf = atof(value);
+
+			else if (strcmp(key, "neighRadius ") == 0)
+				params.neighRadius = atof(value);
+			else if (strcmp(key, "nonPermissiveProbability ") == 0)
+				params.nonPermProb = atof(value);
+			else if (strcmp(key, "initialVirions ") == 0)
+				params.initialVirions = atof(value);
+			else if (strcmp(key, "virionDiffusion ") == 0)
+				params.virionDiffusion = atof(value);
+			else if (strcmp(key, "virionClearance ") == 0)
+				params.virionClearance = atof(value);
+			else if (strcmp(key, "IFNcellProbability ") == 0)
+				params.IFNcellProb = atof(value);
+			else if (strcmp(key, "IFNdiffusion ") == 0)
+				params.IFNdiffusion = atof(value);
+			else if (strcmp(key, "IFNclearance ") == 0)
+				params.IFNclearance = atof(value);
+		}
+	}
+
+	fclose(file);
+}
+

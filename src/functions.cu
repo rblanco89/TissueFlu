@@ -249,32 +249,38 @@ __device__ float virionProduction(int time)
 // ==================================================================
 
 __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
-							  float IFNcellProb, int flagRefrac, int flagSupp,
-							  float *ranUni)
+							  Params *pars, float *ranUni)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
 
-	float pFmax = 0.00025f; // max IFN production rate (IFN min^-1 dsRNA^-1)
-	float k_syn = 1.0f; // dsRNA synthesis rate (dsRNA min^-1 virions^-1)
-	float k_deg = 0.15f / 60.0f; // dsRNA degradation rate (min^-1)
+	float pFmax = pars->pFmax; // max IFN production rate (IFN min^-1 dsRNA^-1)
+	float k_syn = pars->k_syn; // dsRNA synthesis rate (dsRNA min^-1 virions^-1)
+	float k_deg = pars->k_deg; // dsRNA degradation rate (min^-1)
 
-	float logVirions, virions, refracProb, infecProb, suppProb, effInfProb;
+	float K_r = pars->K_r; // IFN half-max for refractory mechanism (IFN)
+	float K_s = pars->K_s; // IFN half-max for suppression mechanism (IFN)
+	float K_v = pars->K_v; // virion half-max for infection mechanism (log10(virions))
+	float K_bp = pars->K_bp; // IFN half-max for BP mechanism (IFN)
+	float K_pf = pars->K_pf; // IFN half-max for PF mechanism (IFN)
+	float alpha_pf = pars->alpha_pf; // PF mechanism enhancement factor (unitless)
+
+	float logVirions, virions, ifns, refracProb, infecProb, suppProb, effInfProb;
 	Cell *cell = &cells[ind];
 	switch (cell->state)
 	{
 		//case NONPERMISSIVE:
 		//	if (flagRefrac)
 		//	{
-		//		refracProb = hillFun(cell->IFN, 10.0f, 3.0f);
-		// 		if (refracProb > ranUni[ind]) cell->state = REFRACTORY;
-		// 		break;
+		//		refracProb = hillFun(cell->IFN, K_r, 3.0f);
+		// 	 	if (refracProb > ranUni[ind]) cell->state = REFRACTORY;
+		// 	 	break;
 		//	}
 
 		case SUSCEPTIBLE:
-			if (flagRefrac)
+			if (pars->flagRefrac)
 			{
-				refracProb = hillFun(cell->IFN, 10.0f, 3.0f); // refractory mechanism
+				refracProb = hillFun(cell->IFN, K_r, 3.0f); // refractory mechanism
 				if (refracProb > ranUni[ind])
 				{
 					cell->state = REFRACTORY;
@@ -285,13 +291,13 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 			}
 
 			logVirions = log10(cell->virions + 1.0f);
-			infecProb = hillFun(logVirions, 3.0f, 3.0f); // infection mechanism
-			if (flagSupp) suppProb = 1.0f - hillFun(cell->IFN, 5.0f, 3.0f); // suppression mechanism
+			infecProb = hillFun(logVirions, K_v, 3.0f); // infection mechanism
+			if (pars->flagSupp) suppProb = 1.0f - hillFun(cell->IFN, K_s, 3.0f); // suppression mechanism
 			else suppProb = 1.0f;
 			effInfProb = infecProb * suppProb;
 			if (effInfProb > ranUni[ind + numCells])
 			{
-				if (ranUni[ind + 2*numCells] < IFNcellProb)
+				if (ranUni[ind + 2*numCells] < pars->IFNcellProb)
 				{
 					cell->state = INFECTED_PLUS;
 					atomicAdd(&cellCounts[SUSCEPTIBLE],    -1);
@@ -309,10 +315,15 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 		case INFECTED_PLUS:
 			cell->infectingTime--;
 			virions = virionProduction(cell->internalTime++);
+			if (pars->flagBP) virions *= (1.0f - hillFun(cell->IFN, K_bp, 3.0f));  // BP mechanism
 			cell->virions += virions; // virus field (virions * dt)
 
 			cell->dsRNA += k_syn * virions - k_deg * cell->dsRNA;
-			cell->IFN += pFmax * cell->dsRNA;
+
+			if (pars->flagPF) ifns = pFmax * cell->dsRNA * (1.0f + alpha_pf * hillFun(cell->IFN, K_pf, 3.0f));  // PF mechanism
+			else ifns = pFmax * cell->dsRNA;  // no PF mechanism
+			cell->IFN += ifns;
+
 			if (cell->infectingTime <= 0)
 			{
 				cell->state = DEAD;
@@ -323,7 +334,9 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 
 		case INFECTED_MINUS:
 			cell->infectingTime--;
-			cell->virions += virionProduction(cell->internalTime++);
+			virions = virionProduction(cell->internalTime++);
+			if (pars->flagBP) virions *= (1.0f - hillFun(cell->IFN, K_bp, 3.0f));  // BP mechanism
+			cell->virions += virions;
 			// No dsRNA, no IFN production for minus-strand infected cells
 			if (cell->infectingTime <= 0)
 			{
@@ -352,8 +365,7 @@ __global__ void copy_fields(Cell *cells, float *virions_old, float *IFN_old, int
 // ==================================================================
 
 __global__ void tissue_diffusion(Cell *cells, const float *virions_old, const float *IFN_old,
-								 int numCells, float virionDiffusion, float virionClearance,
-								 float IFNdiffusion, float IFNclearance)
+								 int numCells, Params *pars) 
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
@@ -380,12 +392,12 @@ __global__ void tissue_diffusion(Cell *cells, const float *virions_old, const fl
 	}
 
 	// Update count of virions for each cell
-	float diffusedVirions = virionDiffusion*diffVirions;
-	cells[ind].virions = (1.0 - virionClearance)*(virions_i + diffusedVirions);
+	float diffusedVirions = pars->virionDiffusion*diffVirions;
+	cells[ind].virions = (1.0 - pars->virionClearance)*(virions_i + diffusedVirions);
 
 	// Update IFN for each cell
-	float diffusedIFN = IFNdiffusion*diffIFN;
-	cells[ind].IFN = (1.0 - IFNclearance)*(IFN_i + diffusedIFN);
+	float diffusedIFN = pars->IFNdiffusion*diffIFN;
+	cells[ind].IFN = (1.0 - pars->IFNclearance)*(IFN_i + diffusedIFN);
 
 	// MODEL 2 (New Mexico Approach)
 	//float meanVirions = cell.virions;

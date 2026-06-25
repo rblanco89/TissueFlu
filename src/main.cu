@@ -20,7 +20,6 @@ int main(int argc, char *argv[])
 	const char *config_file = NULL;
 	const char *structure_file = NULL;
 	const char *output_dir = ".";
-	const char *neighbors_file = NULL;
 
 	/*==========================================*/
 	// Parse command-line arguments
@@ -44,11 +43,6 @@ int main(int argc, char *argv[])
 			output_dir = argv[++i];
 			i++;
 		}
-		else if (strncmp(argv[i], "--neighbors", 11) == 0)
-		{
-			neighbors_file = argv[++i];
-			i++;
-		}
 		else
 		{
 			fprintf(stderr, "Unknown argument: %s\n", argv[i]);
@@ -60,12 +54,12 @@ int main(int argc, char *argv[])
 	if (config_file == NULL || structure_file == NULL)
 	{
 		fprintf(stderr,
-				"Usage: %s --config FILE --structure FILE [--output DIR] [--neighbors FILE]\n"
+				"Usage: %s --config FILE --structure FILE [--output DIR]\n"
 				"  --config     : path to configuration file\n"
 				"  --structure  : path to cell positions file (e.g., CSV)\n"
-				"  --output     : directory where results will be written (default: results)\n"
-				"  --neighbors  : path to precomputed neighbor list; if omitted a new list is\n"
-				"                 built and saved next to the structure file\n",
+				"  --output     : directory where results will be written (default is in-place)\n"
+				"  Neighbor list is loaded automatically from <structure>_neighbors_r<R>.csv\n"
+				"  next to the structure file; if absent it is computed and saved there.\n",
 				argv[0]);
 		return 1;
 	}
@@ -74,7 +68,7 @@ int main(int argc, char *argv[])
 	// Fetch structure and parameters
 	/*==========================================*/
 
-	parse_options(config_file);
+	parse_parameters(config_file);
 
 	FILE *fp = fopen(structure_file, "r");
 	if (!fp)
@@ -157,54 +151,18 @@ int main(int argc, char *argv[])
 			int base_len = (int)(dot - structure_file);
 			snprintf(neigh_path_buf, sizeof(neigh_path_buf),
 					"%.*s_neighbors_r%d%s", base_len, structure_file,
-					int(options.neighRadius), dot);
+					int(params.neighRadius), dot);
 		}
 		else
 		{
 			snprintf(neigh_path_buf, sizeof(neigh_path_buf), "%s_neighbors_r%d",
-					 structure_file, int(options.neighRadius));
+					 structure_file, int(params.neighRadius));
 		}
 	}
 
-	if (neighbors_file == NULL)
+	FILE *fNeigh = fopen(neigh_path_buf, "r");
+	if (fNeigh)
 	{
-		printf("Creating list of neighbors...\n");
-
-		// Find neighbors, store indices and 1/d² weights in cell structure
-		build_neighbors<<<blks, ths>>>(cells, numCells, options.neighRadius);
-		cudaDeviceSynchronize();
-
-		// Save neighbor list next to the structure file
-		printf("Saving neighbor list to %s...\n", neigh_path_buf);
-		FILE *fNeigh = fopen(neigh_path_buf, "w");
-		if (!fNeigh)
-		{
-			fprintf(stderr, "Warning: could not save neighbor list to %s\n", neigh_path_buf);
-		}
-		else
-		{
-			for (int c = 0; c < numCells; c++)
-			{
-				fprintf(fNeigh, "%d", cells[c].numNeighbors);
-				for (int n = 0; n < cells[c].numNeighbors; n++)
-					fprintf(fNeigh, ",%d", cells[c].neighbors[n]);
-				fprintf(fNeigh, "\n");
-			}
-			fclose(fNeigh);
-		}
-	}
-	else
-	{
-		FILE *fNeigh = fopen(neighbors_file, "r");
-		if (!fNeigh)
-		{
-			fprintf(stderr, "Error: could not open neighbor file %s\n", neighbors_file);
-			cudaFree(cells);
-			cudaFree(d_ranUni);
-			curandDestroyGenerator(gen);
-			return 1;
-		}
-
 		char nline[MAX_NEIGHBORS * 8 + 32];
 		for (int c = 0; c < numCells; c++)
 		{
@@ -235,15 +193,42 @@ int main(int argc, char *argv[])
 			}
 		}
 		fclose(fNeigh);
-		printf("Loaded neighbor list for %d cells\n", numCells);
+		printf("Loaded neighbor list from %s\n", neigh_path_buf);
 
-		// Compute 1/d² weights from the loaded neighbor indices
+		// Compute 1/d^2 weights from the loaded neighbor indices
 		compute_weights<<<blks, ths>>>(cells, numCells);
 		cudaDeviceSynchronize();
 	}
+	else
+	{
+		printf("Creating list of neighbors...\n");
+
+		// Find neighbors, store indices and 1/d² weights in cell structure
+		build_neighbors<<<blks, ths>>>(cells, numCells, params.neighRadius);
+		cudaDeviceSynchronize();
+
+		// Save neighbor list next to the structure file
+		printf("Saving neighbor list to %s...\n", neigh_path_buf);
+		FILE *fSave = fopen(neigh_path_buf, "w");
+		if (!fSave)
+		{
+			fprintf(stderr, "Warning: could not save neighbor list to %s\n", neigh_path_buf);
+		}
+		else
+		{
+			for (int c = 0; c < numCells; c++)
+			{
+				fprintf(fSave, "%d", cells[c].numNeighbors);
+				for (int n = 0; n < cells[c].numNeighbors; n++)
+					fprintf(fSave, ",%d", cells[c].neighbors[n]);
+				fprintf(fSave, "\n");
+			}
+			fclose(fSave);
+		}
+	}
 
 	float maxDiffusion = stabilityCondition(cells, numCells);
-	if (maxDiffusion < options.virionDiffusion || maxDiffusion < options.IFNdiffusion)
+	if (maxDiffusion < params.virionDiffusion || maxDiffusion < params.IFNdiffusion)
 	{
 		printf("Diffusion parameters must be less than %f\nStopping...\n", maxDiffusion);
 		cudaFree(cells);
@@ -272,7 +257,7 @@ int main(int argc, char *argv[])
 	snprintf(path_auc,       sizeof(path_auc),       "%s/auc_results.csv",     output_dir);
 
 	// Prepare for result accumulation
-	int numMeasures = options.timeSteps / options.measureInterval + 1;
+	int numMeasures = params.timeSteps / params.measureInterval + 1;
 
 	// Arrays for averaging tissue state (7 variables: V, IFN, S, R, I, D, NP)
 	double *tissueSum = (double*)calloc(numMeasures * 7, sizeof(double));
@@ -292,14 +277,14 @@ int main(int argc, char *argv[])
 	else fprintf(fAUC, "Replicate,AUC_Virus,AUC_IFN\n");
 
 	FILE *fSnap = NULL;
-	if (options.numReplicates == 1 && options.printSnap)
+	if (params.numReplicates == 1 && params.printSnap)
 	{
 		fSnap = fopen(path_snapshots, "w");
 		if (!fSnap) fprintf(stderr, "Warning: could not open %s for writing\n", path_snapshots);
 	}
 
 	FILE *fCell = NULL;
-	if (options.numReplicates == 1)
+	if (params.numReplicates == 1)
 	{
 		fCell = fopen(path_cellState, "w");
 		if (!fCell) fprintf(stderr, "Warning: could not open %s for writing\n", path_cellState);
@@ -310,21 +295,21 @@ int main(int argc, char *argv[])
 	// Replicates Loop
 	/*==========================================*/
 
-	for (int rep=0; rep<options.numReplicates; rep++)
+	for (int rep=0; rep<params.numReplicates; rep++)
 	{
-		printf("\nRunning replicate %d/%d\n", rep+1, options.numReplicates);
+		printf("\nRunning replicate %d/%d\n", rep+1, params.numReplicates);
 
 		// Initialize/Reset random numbers
-		ulong seed = options.ranSeed + rep;
+		ulong seed = params.ranSeed + rep;
 		Ran ranUni(seed);
-		Poissondev ranInfecting(options.infectingPeriod/60, seed);
+		Poissondev ranInfecting(params.infectingPeriod/60, seed);
 		curandSetPseudoRandomGeneratorSeed(gen, seed);
 
 		// Reset cells state
 		memset(cellCounts, 0, 6 * sizeof(int));
 		for (int i=0; i<numCells; i++)
 		{
-			if (ranUni.doub() < options.nonPermProb) cells[i].state = NONPERMISSIVE;
+			if (ranUni.doub() < params.nonPermProb) cells[i].state = NONPERMISSIVE;
 			else cells[i].state = SUSCEPTIBLE;
 		
 			cellCounts[cells[i].state]++;
@@ -337,44 +322,43 @@ int main(int argc, char *argv[])
 		}
 
 		int ind = 0;
-		for (int i=0; i<options.numInfections; i++)
+		for (int i=0; i<params.numInfections; i++)
 		{
 			do ind = numCells*ranUni.doub();
 			while (cells[ind].virions > 0.0f);
-			cells[ind].virions = options.initialVirions;
+			cells[ind].virions = params.initialVirions;
 		}
 
 		// Infecting a central cell of a rectangle tissue
 		// ind = numCells/2 + 149; // 300 x 300 square tissue
 		// ind = 27332; // lung windows selection
 		// cells[ind].state = INFECTED_PLUS;
-		// cells[ind].virions = options.initialVirions;
+		// cells[ind].virions = params.initialVirions;
 
 		/*==========================================*/
 		// Simulation Loop
 		/*==========================================*/
-
 		int measureIdx = 0;
 		double aucVirus = 0.0, aucIFN = 0.0;
 		double prevVirus = 0.0, prevIFN = 0.0;
-		int progressInterval = options.timeSteps / 10;
+		int progressInterval = params.timeSteps / 10;
 		if (progressInterval == 0) progressInterval = 1;
-		for (int step=0; step<=options.timeSteps; step++)
+		for (int step=0; step<=params.timeSteps; step++)
 		{
 			if (step % progressInterval == 0) printf("."); fflush(stdout);
 
-			if (step % options.measureInterval == 0)
+			if (step % params.measureInterval == 0)
 			{
 				tissue_metrics(cells, numCells, cellCounts, tissueSum, tissueSqSum, measureIdx++,
-							   &aucVirus, &aucIFN, &prevVirus, &prevIFN, options.measureInterval);
+							   &aucVirus, &aucIFN, &prevVirus, &prevIFN, params.measureInterval);
 
 				if (fCell) fprintf(fCell, "%d,%f,%f\n", step, cells[ind].virions, cells[ind].IFN);
 			}
 
 			// Print snapshots only if 1 replicate and printSnap is ON
-			if (fSnap && step % options.snapInterval == 0)
+			if (fSnap && step % params.snapInterval == 0)
 			{
-				if (options.printSnap == 2) print_infectedSnapshots(cells, numCells, fSnap,
+				if (params.printSnap == 2) print_infectedSnapshots(cells, numCells, fSnap,
 												cellCounts[INFECTED_PLUS] + cellCounts[INFECTED_MINUS]);
 				else print_tissueSnapshots(cells, numCells, fSnap);
 			}
@@ -382,13 +366,10 @@ int main(int argc, char *argv[])
 			// Generate GPU random numbers (3 non-overlapping draws per cell)
 			curandGenerateUniform(gen, d_ranUni, 3*numCells);
 
-			tissue_update<<<blks, ths>>>(cells, numCells, cellCounts, options.IFNcellProb,
-				options.flagRefrac, options.flagSupp, d_ranUni);
-
+			tissue_update<<<blks, ths>>>(cells, numCells, cellCounts, &params, d_ranUni);
+				
 			copy_fields<<<blks, ths>>>(cells, virions_old, IFN_old, numCells);
-			tissue_diffusion<<<blks, ths>>>(cells, virions_old, IFN_old, numCells,
-				options.virionDiffusion, options.virionClearance,
-				options.IFNdiffusion, options.IFNclearance);
+			tissue_diffusion<<<blks, ths>>>(cells, virions_old, IFN_old, numCells, &params);
 
 			cudaDeviceSynchronize();
 		}
@@ -414,13 +395,13 @@ int main(int argc, char *argv[])
 
 		for (int s=0; s<numMeasures; s++)
 		{
-			fprintf(fTavg, "%d", s*options.measureInterval);
-			fprintf(fTstd, "%d", s*options.measureInterval);
+			fprintf(fTavg, "%d", s*params.measureInterval);
+			fprintf(fTstd, "%d", s*params.measureInterval);
 			int tBase = s*7;
 			for (int m=0; m<7; m++)
 			{
-				double avg = tissueSum[tBase+m] / options.numReplicates;
-				double var = (tissueSqSum[tBase+m] / options.numReplicates) - (avg*avg);
+				double avg = tissueSum[tBase+m] / params.numReplicates;
+				double var = (tissueSqSum[tBase+m] / params.numReplicates) - (avg*avg);
 				double sdev = sqrt(fmax(0.0, var));
 				fprintf(fTavg, ",%e", avg);
 				fprintf(fTstd, ",%e", sdev);
