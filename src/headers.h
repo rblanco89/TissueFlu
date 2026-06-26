@@ -35,6 +35,7 @@ typedef struct
 	float K_bp;
 	float K_pf;
 	float alpha_pf;
+	float nHill;
 }
 Params;
 

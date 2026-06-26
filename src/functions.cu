@@ -265,6 +265,8 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 	float K_pf = pars->K_pf; // IFN half-max for PF mechanism (IFN)
 	float alpha_pf = pars->alpha_pf; // PF mechanism enhancement factor (unitless)
 
+	float nHill = pars->nHill; // Hill coefficient (unitless)
+
 	float logVirions, virions, ifns, refracProb, infecProb, suppProb, effInfProb;
 	Cell *cell = &cells[ind];
 	switch (cell->state)
@@ -272,7 +274,7 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 		//case NONPERMISSIVE:
 		//	if (flagRefrac)
 		//	{
-		//		refracProb = hillFun(cell->IFN, K_r, 3.0f);
+		//		refracProb = hillFun(cell->IFN, K_r, nHill); // refractory mechanism
 		// 	 	if (refracProb > ranUni[ind]) cell->state = REFRACTORY;
 		// 	 	break;
 		//	}
@@ -280,7 +282,7 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 		case SUSCEPTIBLE:
 			if (pars->flagRefrac)
 			{
-				refracProb = hillFun(cell->IFN, K_r, 3.0f); // refractory mechanism
+				refracProb = hillFun(cell->IFN, K_r, nHill); // refractory mechanism
 				if (refracProb > ranUni[ind])
 				{
 					cell->state = REFRACTORY;
@@ -291,8 +293,8 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 			}
 
 			logVirions = log10(cell->virions + 1.0f);
-			infecProb = hillFun(logVirions, K_v, 3.0f); // infection mechanism
-			if (pars->flagSupp) suppProb = 1.0f - hillFun(cell->IFN, K_s, 3.0f); // suppression mechanism
+			infecProb = hillFun(logVirions, K_v, nHill); // infection mechanism
+			if (pars->flagSupp) suppProb = 1.0f - hillFun(cell->IFN, K_s, nHill); // suppression mechanism
 			else suppProb = 1.0f;
 			effInfProb = infecProb * suppProb;
 			if (effInfProb > ranUni[ind + numCells])
@@ -315,12 +317,12 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 		case INFECTED_PLUS:
 			cell->infectingTime--;
 			virions = virionProduction(cell->internalTime++);
-			if (pars->flagBP) virions *= (1.0f - hillFun(cell->IFN, K_bp, 3.0f));  // BP mechanism
+			if (pars->flagBP) virions *= (1.0f - hillFun(cell->IFN, K_bp, nHill));  // BP mechanism
 			cell->virions += virions; // virus field (virions * dt)
 
 			cell->dsRNA += k_syn * virions - k_deg * cell->dsRNA;
 
-			if (pars->flagPF) ifns = pFmax * cell->dsRNA * (1.0f + alpha_pf * hillFun(cell->IFN, K_pf, 3.0f));  // PF mechanism
+			if (pars->flagPF) ifns = pFmax * cell->dsRNA * (1.0f + alpha_pf * hillFun(cell->IFN, K_pf, nHill));  // PF mechanism
 			else ifns = pFmax * cell->dsRNA;  // no PF mechanism
 			cell->IFN += ifns;
 
@@ -335,7 +337,7 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 		case INFECTED_MINUS:
 			cell->infectingTime--;
 			virions = virionProduction(cell->internalTime++);
-			if (pars->flagBP) virions *= (1.0f - hillFun(cell->IFN, K_bp, 3.0f));  // BP mechanism
+			if (pars->flagBP) virions *= (1.0f - hillFun(cell->IFN, K_bp, nHill));  // BP mechanism
 			cell->virions += virions;
 			// No dsRNA, no IFN production for minus-strand infected cells
 			if (cell->infectingTime <= 0)

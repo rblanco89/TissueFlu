@@ -249,12 +249,13 @@ int main(int argc, char *argv[])
 
 	// Build output file paths
 	char path_snapshots[512], path_cellState[512];
-	char path_tissueAvg[512], path_tissueStd[512], path_auc[512];
-	snprintf(path_snapshots, sizeof(path_snapshots), "%s/snapshots.xyz",       output_dir);
-	snprintf(path_cellState, sizeof(path_cellState), "%s/cellState.csv",       output_dir);
-	snprintf(path_tissueAvg, sizeof(path_tissueAvg), "%s/tissueState_avg.csv", output_dir);
-	snprintf(path_tissueStd, sizeof(path_tissueStd), "%s/tissueState_std.csv", output_dir);
-	snprintf(path_auc,       sizeof(path_auc),       "%s/auc_results.csv",     output_dir);
+	char path_tissueState[512], path_tissueAvg[512], path_tissueStd[512], path_auc[512];
+	snprintf(path_snapshots,  sizeof(path_snapshots),  "%s/snapshots.xyz",       output_dir);
+	snprintf(path_cellState,  sizeof(path_cellState),  "%s/cellState.csv",       output_dir);
+	snprintf(path_tissueState,sizeof(path_tissueState),"%s/tissueState.csv",     output_dir);
+	snprintf(path_tissueAvg,  sizeof(path_tissueAvg),  "%s/tissueState_avg.csv", output_dir);
+	snprintf(path_tissueStd,  sizeof(path_tissueStd),  "%s/tissueState_std.csv", output_dir);
+	snprintf(path_auc,        sizeof(path_auc),        "%s/auc_results.csv",     output_dir);
 
 	// Prepare for result accumulation
 	int numMeasures = params.timeSteps / params.measureInterval + 1;
@@ -302,7 +303,7 @@ int main(int argc, char *argv[])
 		// Initialize/Reset random numbers
 		ulong seed = params.ranSeed + rep;
 		Ran ranUni(seed);
-		Poissondev ranInfecting(params.infectingPeriod/60, seed);
+		Poissondev ranInfecting(params.infectingPeriod/60, seed^0x9E3779B9);
 		curandSetPseudoRandomGeneratorSeed(gen, seed);
 
 		// Reset cells state
@@ -386,31 +387,51 @@ int main(int argc, char *argv[])
 	// Finalize results: Average and Std Dev
 	/*==========================================*/
 
-	FILE *fTavg = fopen(path_tissueAvg, "w");
-	FILE *fTstd = fopen(path_tissueStd, "w");
-	if (fTavg && fTstd)
+	if (params.numReplicates == 1)
 	{
-		fprintf(fTavg, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive\n");
-		fprintf(fTstd, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive\n");
-
-		for (int s=0; s<numMeasures; s++)
+		FILE *fTissue = fopen(path_tissueState, "w");
+		if (fTissue)
 		{
-			fprintf(fTavg, "%d", s*params.measureInterval);
-			fprintf(fTstd, "%d", s*params.measureInterval);
-			int tBase = s*7;
-			for (int m=0; m<7; m++)
+			fprintf(fTissue, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive\n");
+			for (int s=0; s<numMeasures; s++)
 			{
-				double avg = tissueSum[tBase+m] / params.numReplicates;
-				double var = (tissueSqSum[tBase+m] / params.numReplicates) - (avg*avg);
-				double sdev = sqrt(fmax(0.0, var));
-				fprintf(fTavg, ",%e", avg);
-				fprintf(fTstd, ",%e", sdev);
+				fprintf(fTissue, "%d", s*params.measureInterval);
+				int tBase = s*7;
+				for (int m=0; m<7; m++)
+					fprintf(fTissue, ",%e", tissueSum[tBase+m]);
+				fprintf(fTissue, "\n");
 			}
-			fprintf(fTavg, "\n");
-			fprintf(fTstd, "\n");
+			fclose(fTissue);
 		}
-		fclose(fTavg);
-		fclose(fTstd);
+	}
+	else
+	{
+		FILE *fTavg = fopen(path_tissueAvg, "w");
+		FILE *fTstd = fopen(path_tissueStd, "w");
+		if (fTavg && fTstd)
+		{
+			fprintf(fTavg, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive\n");
+			fprintf(fTstd, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive\n");
+
+			for (int s=0; s<numMeasures; s++)
+			{
+				fprintf(fTavg, "%d", s*params.measureInterval);
+				fprintf(fTstd, "%d", s*params.measureInterval);
+				int tBase = s*7;
+				for (int m=0; m<7; m++)
+				{
+					double avg = tissueSum[tBase+m] / params.numReplicates;
+					double var = (tissueSqSum[tBase+m] / params.numReplicates) - (avg*avg);
+					double sdev = sqrt(fmax(0.0, var));
+					fprintf(fTavg, ",%e", avg);
+					fprintf(fTstd, ",%e", sdev);
+				}
+				fprintf(fTavg, "\n");
+				fprintf(fTstd, "\n");
+			}
+			fclose(fTavg);
+			fclose(fTstd);
+		}
 	}
 
 	printf("\nCompleted\n");

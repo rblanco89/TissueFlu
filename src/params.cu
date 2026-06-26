@@ -33,6 +33,7 @@ void parse_parameters(const char *filename)
 	params.K_bp = 5.0f; // IFN half-max for BP mechanism (IFN)
 	params.K_pf = 5.0f; // IFN half-max for PF mechanism (IFN)
 	params.alpha_pf = 1.0f; // PF mechanism enhancement factor (unitless)
+	params.nHill = 2.0f; // Hill coefficient (unitless)
 
 	params.virionDiffusion = 0.01f; // virion diffusion coefficient (cell diam^2 min^-1)
 	params.virionClearance = 0.0115f; // virion clearance rate (min^-1)
@@ -96,6 +97,8 @@ void parse_parameters(const char *filename)
 				params.K_pf = atof(value);
 			else if (strcmp(key, "alpha_pf ") == 0)
 				params.alpha_pf = atof(value);
+			else if (strcmp(key, "nHill ") == 0)
+				params.nHill = atof(value);
 
 			else if (strcmp(key, "neighRadius ") == 0)
 				params.neighRadius = atof(value);
