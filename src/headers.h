@@ -11,6 +11,7 @@ typedef struct
 	int printSnap;
 	int snapInterval;
 	int measureInterval;
+	int printReplicates;
 
 	int flagRefrac; 
 	int flagSupp;
@@ -79,7 +80,8 @@ __host__ float stabilityCondition(Cell *cells, int numCells);
 __host__ void tissue_metrics(Cell *cells, int numCells, int *cellCounts,
                              double *tissueSum, double *tissueSqSum, int measureIdx,
                              double *aucVirus, double *aucIFN,
-                             double *prevVirus, double *prevIFN, int measureInterval);
+                             double *prevVirus, double *prevIFN, int measureInterval,
+                             FILE *fRep);
 __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap);
 __host__ void print_infectedSnapshots(Cell *cells, int numCells, FILE *fSnap, int numInf);
 

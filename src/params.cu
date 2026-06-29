@@ -18,7 +18,7 @@ void parse_parameters(const char *filename)
 	params.nonPermProb = 0.0f;
 	params.IFNcellProb = 0.0f;
 
-	params.pFmax = 0.00025f; // max IFN production rate (IFN min^-1 dsRNA^-1)
+	params.pFmax = 1.0f; // max IFN production rate (IFN min^-1 dsRNA^-1)
 	params.k_syn = 1.0f; // dsRNA synthesis rate (dsRNA min^-1 virions^-1)
 	params.k_deg = 0.15f / 60.0f; // dsRNA degradation rate (min^-1)
 
@@ -41,8 +41,9 @@ void parse_parameters(const char *filename)
 	params.IFNclearance = 0.005760f; // IFN clearance rate (min^-1)
 
 	params.printSnap = 0;
-	params.snapInterval = 100;
-	params.measureInterval = 100;
+	params.snapInterval = 60;
+	params.measureInterval = 60;
+	params.printReplicates = 0;
 
 	params.ranSeed = 42; // default random seed
 	
@@ -87,20 +88,8 @@ void parse_parameters(const char *filename)
 				params.flagBP = atoi(value);
 			else if (strcmp(key, "flagPF ") == 0)
 				params.flagPF = atoi(value);
-			else if (strcmp(key, "K_r ") == 0)
-				params.K_r = atof(value);
-			else if (strcmp(key, "K_s ") == 0)
-				params.K_s = atof(value);
-			else if (strcmp(key, "K_v ") == 0)
-				params.K_v = atof(value);
-			else if (strcmp(key, "K_bp ") == 0)
-				params.K_bp = atof(value);
-			else if (strcmp(key, "K_pf ") == 0)
-				params.K_pf = atof(value);
-			else if (strcmp(key, "alpha_pf ") == 0)
-				params.alpha_pf = atof(value);
-			else if (strcmp(key, "nHill ") == 0)
-				params.nHill = atof(value);
+			else if (strcmp(key, "printReplicates ") == 0)
+				params.printReplicates = atoi(value);
 
 			else if (strcmp(key, "neighRadius ") == 0)
 				params.neighRadius = atof(value);
@@ -118,6 +107,20 @@ void parse_parameters(const char *filename)
 				params.IFNdiffusion = atof(value);
 			else if (strcmp(key, "IFNclearance ") == 0)
 				params.IFNclearance = atof(value);
+			else if (strcmp(key, "K_r ") == 0)
+				params.K_r = atof(value);
+			else if (strcmp(key, "K_s ") == 0)
+				params.K_s = atof(value);
+			else if (strcmp(key, "K_v ") == 0)
+				params.K_v = atof(value);
+			else if (strcmp(key, "K_bp ") == 0)
+				params.K_bp = atof(value);
+			else if (strcmp(key, "K_pf ") == 0)
+				params.K_pf = atof(value);
+			else if (strcmp(key, "alpha_pf ") == 0)
+				params.alpha_pf = atof(value);
+			else if (strcmp(key, "nHill ") == 0)
+				params.nHill = atof(value);
 		}
 	}
 

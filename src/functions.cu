@@ -48,7 +48,8 @@ __host__  float stabilityCondition(Cell *cells, int numCells)
 __host__ void tissue_metrics(Cell *cells, int numCells, int *cellCounts,
                              double *tissueSum, double *tissueSqSum, int measureIdx,
                              double *aucVirus, double *aucIFN,
-                             double *prevVirus, double *prevIFN, int measureInterval)
+                             double *prevVirus, double *prevIFN, int measureInterval,
+                             FILE *fRep)
 {
 	double val[7];
 
@@ -83,6 +84,14 @@ __host__ void tissue_metrics(Cell *cells, int numCells, int *cellCounts,
 
 	*prevVirus = viralLoad;
 	*prevIFN   = IFNlevel;
+
+	if (fRep)
+	{
+		fprintf(fRep, "%d", measureIdx * measureInterval);
+		for (int m = 0; m < 7; m++)
+			fprintf(fRep, ",%e", val[m]);
+		fprintf(fRep, "\n");
+	}
 }
 
 // ==================================================================

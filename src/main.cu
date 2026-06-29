@@ -300,10 +300,20 @@ int main(int argc, char *argv[])
 	{
 		printf("\nRunning replicate %d/%d\n", rep+1, params.numReplicates);
 
+		FILE *fRep = NULL;
+		if (params.printReplicates && params.numReplicates > 1)
+		{
+			char path_rep[512];
+			snprintf(path_rep, sizeof(path_rep), "%s/tissueState_%d.csv", output_dir, rep+1);
+			fRep = fopen(path_rep, "w");
+			if (!fRep) fprintf(stderr, "Warning: could not open %s for writing\n", path_rep);
+			else fprintf(fRep, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive\n");
+		}
+
 		// Initialize/Reset random numbers
 		ulong seed = params.ranSeed + rep;
 		Ran ranUni(seed);
-		Poissondev ranInfecting(params.infectingPeriod/60, seed^0x9E3779B9);
+		Poissondev ranInfecting(params.infectingPeriod/60, seed^0x9E3779B9); // Convert to hours
 		curandSetPseudoRandomGeneratorSeed(gen, seed);
 
 		// Reset cells state
@@ -351,17 +361,16 @@ int main(int argc, char *argv[])
 			if (step % params.measureInterval == 0)
 			{
 				tissue_metrics(cells, numCells, cellCounts, tissueSum, tissueSqSum, measureIdx++,
-							   &aucVirus, &aucIFN, &prevVirus, &prevIFN, params.measureInterval);
+							   &aucVirus, &aucIFN, &prevVirus, &prevIFN, params.measureInterval, fRep);
 
 				if (fCell) fprintf(fCell, "%d,%f,%f\n", step, cells[ind].virions, cells[ind].IFN);
-			}
 
-			// Print snapshots only if 1 replicate and printSnap is ON
-			if (fSnap && step % params.snapInterval == 0)
-			{
-				if (params.printSnap == 2) print_infectedSnapshots(cells, numCells, fSnap,
-												cellCounts[INFECTED_PLUS] + cellCounts[INFECTED_MINUS]);
-				else print_tissueSnapshots(cells, numCells, fSnap);
+				if (fSnap) 
+				{
+					if (params.printSnap == 2) print_infectedSnapshots(cells, numCells, fSnap,
+													cellCounts[INFECTED_PLUS] + cellCounts[INFECTED_MINUS]);
+					else print_tissueSnapshots(cells, numCells, fSnap);
+				}
 			}
 
 			// Generate GPU random numbers (3 non-overlapping draws per cell)
@@ -375,6 +384,7 @@ int main(int argc, char *argv[])
 			cudaDeviceSynchronize();
 		}
 
+		if (fRep)  fclose(fRep);
 		if (fCell) fclose(fCell);
 		if (fSnap) fclose(fSnap);
 
