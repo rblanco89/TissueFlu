@@ -43,6 +43,8 @@ void parse_parameters(const char *filename)
 	params.printSnap = 0;
 	params.snapInterval = 100;
 	params.measureInterval = 100;
+
+	params.ranSeed = 42; // default random seed
 	
 	FILE *file = fopen(filename, "r");
 	if (!file)
