@@ -121,6 +121,14 @@ void parse_parameters(const char *filename)
 				params.alpha_pf = atof(value);
 			else if (strcmp(key, "nHill ") == 0)
 				params.nHill = atof(value);
+			else if (strcmp(key, "k_syn ") == 0)
+				params.k_syn = atof(value);
+			else if (strcmp(key, "k_deg ") == 0)
+				params.k_deg = atof(value);
+			else if (strcmp(key, "pFmax ") == 0)
+				params.pFmax = atof(value);
+			else
+				fprintf(stderr, "Warning: Unknown parameter '%s' in config file.\n", key);
 		}
 	}
 
