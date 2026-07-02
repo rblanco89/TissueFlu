@@ -268,6 +268,11 @@ int main(int argc, char *argv[])
 	int *cellCounts;
 	cudaMallocManaged(&cellCounts, 6 * sizeof(int));
 
+	// Device-accessible copy of the host-parsed params for the kernels.
+	Params *params_d;
+	cudaMallocManaged(&params_d, sizeof(Params));
+	*params_d = params;
+
 	// Shadow arrays for race-free diffusion (read-only snapshots of virions and IFN)
 	float *virions_old, *IFN_old;
 	cudaMalloc(&virions_old, numCells*sizeof(float));
@@ -376,10 +381,10 @@ int main(int argc, char *argv[])
 			// Generate GPU random numbers (3 non-overlapping draws per cell)
 			curandGenerateUniform(gen, d_ranUni, 3*numCells);
 
-			tissue_update<<<blks, ths>>>(cells, numCells, cellCounts, &params, d_ranUni);
+			tissue_update<<<blks, ths>>>(cells, numCells, cellCounts, params_d, d_ranUni);
 				
 			copy_fields<<<blks, ths>>>(cells, virions_old, IFN_old, numCells);
-			tissue_diffusion<<<blks, ths>>>(cells, virions_old, IFN_old, numCells, &params);
+			tissue_diffusion<<<blks, ths>>>(cells, virions_old, IFN_old, numCells, params_d);
 
 			cudaDeviceSynchronize();
 		}
@@ -452,6 +457,7 @@ int main(int argc, char *argv[])
 	cudaFree(IFN_old);
 	cudaFree(d_ranUni);
 	cudaFree(cellCounts);
+	cudaFree(params_d);
 	curandDestroyGenerator(gen);
 	free(tissueSum);
 	free(tissueSqSum);

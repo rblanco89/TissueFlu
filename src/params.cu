@@ -70,7 +70,7 @@ void parse_parameters(const char *filename)
 				params.numInfections = atoi(value);
 			else if (strcmp(key, "infectingPeriod ") == 0)
 				params.infectingPeriod = atoi(value);
-			else if (strcmp(key, "randSeed ") == 0)
+			else if (strcmp(key, "ranSeed ") == 0)
 				params.ranSeed = atoi(value);
 			else if (strcmp(key, "printSnapshots ") == 0)
 				params.printSnap = atoi(value);
