@@ -177,6 +177,16 @@ int main(int argc, char *argv[])
 			}
 			char *tok = strtok(nline, ",\n");
 			cells[c].numNeighbors = atoi(tok);
+			if (cells[c].numNeighbors > MAX_NEIGHBORS)
+			{
+				fprintf(stderr, "Error: cell %d has %d neighbors in file, exceeding MAX_NEIGHBORS (%d)\n",
+						c, cells[c].numNeighbors, MAX_NEIGHBORS);
+				fclose(fNeigh);
+				cudaFree(cells);
+				cudaFree(d_ranUni);
+				curandDestroyGenerator(gen);
+				return 1;
+			}
 			for (int n = 0; n < cells[c].numNeighbors; n++)
 			{
 				tok = strtok(NULL, ",\n");
@@ -204,8 +214,21 @@ int main(int argc, char *argv[])
 		printf("Creating list of neighbors...\n");
 
 		// Find neighbors, store indices and 1/d² weights in cell structure
-		build_neighbors<<<blks, ths>>>(cells, numCells, params.neighRadius);
+		int *d_overflowFlag;
+		cudaMallocManaged(&d_overflowFlag, sizeof(int));
+		*d_overflowFlag = 0;
+		build_neighbors<<<blks, ths>>>(cells, numCells, params.neighRadius, d_overflowFlag);
 		cudaDeviceSynchronize();
+		if (*d_overflowFlag)
+		{
+			fprintf(stderr, "Error: neighbor list overflow. Increase MAX_NEIGHBORS or reduce neighRadius.\n");
+			cudaFree(d_overflowFlag);
+			cudaFree(cells);
+			cudaFree(d_ranUni);
+			curandDestroyGenerator(gen);
+			return 1;
+		}
+		cudaFree(d_overflowFlag);
 
 		// Save neighbor list next to the structure file
 		printf("Saving neighbor list to %s...\n", neigh_path_buf);
@@ -225,16 +248,6 @@ int main(int argc, char *argv[])
 			}
 			fclose(fSave);
 		}
-	}
-
-	float maxDiffusion = stabilityCondition(cells, numCells);
-	if (maxDiffusion < params.virionDiffusion || maxDiffusion < params.IFNdiffusion)
-	{
-		printf("Diffusion parameters must be less than %f\nStopping...\n", maxDiffusion);
-		cudaFree(cells);
-		cudaFree(d_ranUni);
-		curandDestroyGenerator(gen);
-		return 1;
 	}
 
 	// Create output directory if it does not exist

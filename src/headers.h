@@ -1,5 +1,5 @@
 #define THS_MAX 256
-#define MAX_NEIGHBORS 256
+#define MAX_NEIGHBORS 512
 
 typedef struct
 {
@@ -85,7 +85,7 @@ __host__ void tissue_metrics(Cell *cells, int numCells, int *cellCounts,
 __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap);
 __host__ void print_infectedSnapshots(Cell *cells, int numCells, FILE *fSnap, int numInf);
 
-__global__ void build_neighbors(Cell *cells, int numCells, float cutoff);
+__global__ void build_neighbors(Cell *cells, int numCells, float cutoff, int *overflowFlag);
 __global__ void compute_weights(Cell *cells, int numCells);
 __global__ void copy_fields(Cell *cells, float *virions_old, float *IFN_old, int numCells);
 __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts, Params *pars, float *d_ranUni);

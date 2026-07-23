@@ -146,7 +146,7 @@ __host__ void print_infectedSnapshots(Cell *cells, int numCells, FILE *fSnap, in
 // DEVICE FUNCTIONS
 // ==================================================================
 
-__global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
+__global__ void build_neighbors(Cell *cells, int numCells, float cutoff, int *overflowFlag)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
@@ -187,7 +187,8 @@ __global__ void build_neighbors(Cell *cells, int numCells, float cutoff)
 		}
 		else
 		{
-			printf("Warning: cell %d neighbor list full\n", ind);
+			printf("Error: cell %d neighbor list full (MAX_NEIGHBORS=%d)\n", ind, MAX_NEIGHBORS);
+			atomicExch(overflowFlag, 1);
 			break;
 		}
 	}
