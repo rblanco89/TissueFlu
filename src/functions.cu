@@ -268,11 +268,11 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 	float k_syn = pars->k_syn; // dsRNA synthesis rate (dsRNA min^-1 virions^-1)
 	float k_deg = pars->k_deg; // dsRNA degradation rate (min^-1)
 
-	float K_r = pars->K_r; // IFN half-max for refractory mechanism (IFN)
-	float K_s = pars->K_s; // IFN half-max for suppression mechanism (IFN)
-	float K_v = pars->K_v; // virion half-max for infection mechanism (log10(virions))
-	float K_bp = pars->K_bp; // IFN half-max for BP mechanism (IFN)
-	float K_pf = pars->K_pf; // IFN half-max for PF mechanism (IFN)
+	float K_r = pars->K_r; // IFN half-max for refractory mechanism (log10(IFN+1))
+	float K_s = pars->K_s; // IFN half-max for suppression mechanism (log10(IFN+1))
+	float K_v = pars->K_v; // virion half-max for infection mechanism (log10(virions+1))
+	float K_bp = pars->K_bp; // IFN half-max for BP mechanism (IFN, linear)
+	float K_pf = pars->K_pf; // IFN half-max for PF mechanism (IFN, linear)
 	float alpha_pf = pars->alpha_pf; // PF mechanism enhancement factor (unitless)
 
 	float nHill = pars->nHill; // Hill coefficient (unitless)
@@ -292,7 +292,7 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 		case SUSCEPTIBLE:
 			if (pars->flagRefrac)
 			{
-				refracProb = hillFun(cell->IFN, K_r, nHill); // refractory mechanism
+				refracProb = hillFun(log10(cell->IFN + 1.0f), K_r, nHill); // refractory mechanism (log-scale IFN input)
 				if (refracProb > ranUni[ind])
 				{
 					cell->state = REFRACTORY;
@@ -304,7 +304,7 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 
 			logVirions = log10(cell->virions + 1.0f);
 			infecProb = hillFun(logVirions, K_v, nHill); // infection mechanism
-			if (pars->flagSupp) suppProb = 1.0f - hillFun(cell->IFN, K_s, nHill); // suppression mechanism
+			if (pars->flagSupp) suppProb = 1.0f - hillFun(log10(cell->IFN + 1.0f), K_s, nHill); // suppression mechanism (log-scale IFN input)
 			else suppProb = 1.0f;
 			effInfProb = infecProb * suppProb;
 			if (effInfProb > ranUni[ind + numCells])
