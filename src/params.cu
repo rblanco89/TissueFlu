@@ -26,6 +26,7 @@ void parse_parameters(const char *filename)
 	params.flagSupp = 0; // default: infection suppression OFF
 	params.flagBP = 0; // default: BP mechanism OFF
 	params.flagPF = 0; // default: PF mechanism OFF
+	params.flagPorousDiff = 0; // default: porous diffusion OFF
 
 	params.K_r = 10.0f; // IFN half-max for refractory mechanism (IFN)
 	params.K_s = 5.0f; // IFN half-max for suppression mechanism (IFN)
@@ -88,6 +89,8 @@ void parse_parameters(const char *filename)
 				params.flagBP = atoi(value);
 			else if (strcmp(key, "flagPF ") == 0)
 				params.flagPF = atoi(value);
+			else if (strcmp(key, "flagPorousDiff ") == 0)
+				params.flagPorousDiff = atoi(value);
 			else if (strcmp(key, "printReplicates ") == 0)
 				params.printReplicates = atoi(value);
 

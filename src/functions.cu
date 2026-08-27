@@ -399,16 +399,30 @@ __global__ void tissue_diffusion(Cell *cells, const float *virions_old, const fl
 		int ind_j = neighbors[j];
 		float w   = weights[j];
 
-		diffVirions += w*(virions_old[ind_j] - virions_i);
-		diffIFN += w*(IFN_old[ind_j] - IFN_i);
+		float virions_j = virions_old[ind_j];
+		float IFN_j     = IFN_old[ind_j];
+
+		if (pars->flagPorousDiff)
+		{
+			diffVirions += w*(virions_j*virions_j - virions_i * virions_i);
+			diffIFN += w*(IFN_j*IFN_j - IFN_i * IFN_i);
+		}
+		else
+		{
+			diffVirions += w*(virions_j - virions_i);
+			diffIFN += w*(IFN_j - IFN_i);
+		}
 	}
 
+	float aux = 1.0f;
+	if (pars->flagPorousDiff) aux = 0.5f;
+
 	// Update count of virions for each cell
-	float diffusedVirions = pars->virionDiffusion*diffVirions;
+	float diffusedVirions = aux * pars->virionDiffusion*diffVirions;
 	cells[ind].virions = (1.0 - pars->virionClearance)*(virions_i + diffusedVirions);
 
 	// Update IFN for each cell
-	float diffusedIFN = pars->IFNdiffusion*diffIFN;
+	float diffusedIFN = aux * pars->IFNdiffusion*diffIFN;
 	cells[ind].IFN = (1.0 - pars->IFNclearance)*(IFN_i + diffusedIFN);
 
 	// MODEL 2 (New Mexico Approach)

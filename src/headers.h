@@ -17,6 +17,7 @@ typedef struct
 	int flagSupp;
 	int flagBP;
 	int flagPF;
+	int flagPorousDiff;
 
 	float neighRadius;
 	float nonPermProb;
