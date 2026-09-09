@@ -1,8 +1,8 @@
 # === Configuration ===
-HOST_COMPILER = gcc
+HOST_COMPILER = gcc-15
 NVCC = nvcc -ccbin $(HOST_COMPILER)
 NVCCFLAGS = -O2 -arch=sm_86
-LIBRARIES = -lm -lcurand
+LIBRARIES = -lm -lcurand -lstdc++
 
 # === File Structure ===
 SRC_DIR = src

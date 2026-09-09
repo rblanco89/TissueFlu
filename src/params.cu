@@ -27,6 +27,7 @@ void parse_parameters(const char *filename)
 	params.flagBP = 0; // default: BP mechanism OFF
 	params.flagPF = 0; // default: PF mechanism OFF
 	params.flagPorousDiff = 0; // default: porous diffusion OFF
+	params.flagCTL = 0; // default: CTL killing mechanism OFF
 
 	params.K_r = 10.0f; // IFN half-max for refractory mechanism (IFN)
 	params.K_s = 5.0f; // IFN half-max for suppression mechanism (IFN)
@@ -35,6 +36,12 @@ void parse_parameters(const char *filename)
 	params.K_pf = 5.0f; // IFN half-max for PF mechanism (IFN)
 	params.alpha_pf = 1.0f; // PF mechanism enhancement factor (unitless)
 	params.nHill = 2.0f; // Hill coefficient (unitless)
+
+	params.rho_T = 0.01f; // CTL autocatalytic growth rate (min^-1)
+	params.delta_T = 0.002f; // CTL decay rate (min^-1)
+	params.K_ifn = 5.0f; // IFN half-max for CTL growth gating (IFN)
+	params.T0 = 1e-4f; // initial systemic CTL pool
+	params.K_T = 5.0f; // CTL half-max for killing probability
 
 	params.virionDiffusion = 0.01f; // virion diffusion coefficient (cell diam^2 min^-1)
 	params.virionClearance = 0.0115f; // virion clearance rate (min^-1)
@@ -91,6 +98,8 @@ void parse_parameters(const char *filename)
 				params.flagPF = atoi(value);
 			else if (strcmp(key, "flagPorousDiff ") == 0)
 				params.flagPorousDiff = atoi(value);
+			else if (strcmp(key, "flagCTL ") == 0)
+				params.flagCTL = atoi(value);
 			else if (strcmp(key, "printReplicates ") == 0)
 				params.printReplicates = atoi(value);
 
@@ -130,6 +139,16 @@ void parse_parameters(const char *filename)
 				params.k_deg = atof(value);
 			else if (strcmp(key, "pFmax ") == 0)
 				params.pFmax = atof(value);
+			else if (strcmp(key, "rho_T ") == 0)
+				params.rho_T = atof(value);
+			else if (strcmp(key, "delta_T ") == 0)
+				params.delta_T = atof(value);
+			else if (strcmp(key, "K_ifn ") == 0)
+				params.K_ifn = atof(value);
+			else if (strcmp(key, "T0 ") == 0)
+				params.T0 = atof(value);
+			else if (strcmp(key, "K_T ") == 0)
+				params.K_T = atof(value);
 			else
 				fprintf(stderr, "Warning: Unknown parameter '%s' in config file.\n", key);
 		}

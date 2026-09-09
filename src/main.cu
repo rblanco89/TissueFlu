@@ -69,6 +69,7 @@ int main(int argc, char *argv[])
 	/*==========================================*/
 
 	parse_parameters(config_file);
+	params.T_sys = params.T0; // initialize CTL state
 
 	FILE *fp = fopen(structure_file, "r");
 	if (!fp)
@@ -286,6 +287,10 @@ int main(int argc, char *argv[])
 	cudaMallocManaged(&params_d, sizeof(Params));
 	*params_d = params;
 
+	// Accumulator for the tissue-wide IFN sum (used by the CTL mechanism)
+	float *d_IFNsum;
+	cudaMallocManaged(&d_IFNsum, sizeof(float));
+
 	// Shadow arrays for race-free diffusion (read-only snapshots of virions and IFN)
 	float *virions_old, *IFN_old;
 	cudaMalloc(&virions_old, numCells*sizeof(float));
@@ -336,6 +341,7 @@ int main(int argc, char *argv[])
 
 		// Reset cells state
 		memset(cellCounts, 0, 6 * sizeof(int));
+		params_d->T_sys = params.T0; // reset CTL state
 		for (int i=0; i<numCells; i++)
 		{
 			if (ranUni.doub() < params.nonPermProb) cells[i].state = NONPERMISSIVE;
@@ -396,10 +402,12 @@ int main(int argc, char *argv[])
 
 			tissue_update<<<blks, ths>>>(cells, numCells, cellCounts, params_d, d_ranUni);
 				
-			copy_fields<<<blks, ths>>>(cells, virions_old, IFN_old, numCells);
+			*d_IFNsum = 0.0f;
+			copy_fields<<<blks, ths>>>(cells, virions_old, IFN_old, numCells, params_d, d_IFNsum);
 			tissue_diffusion<<<blks, ths>>>(cells, virions_old, IFN_old, numCells, params_d);
 
 			cudaDeviceSynchronize();
+			if (params.flagCTL) updateTsys(params_d, *d_IFNsum, numCells);
 		}
 
 		if (fRep)  fclose(fRep);
@@ -471,6 +479,7 @@ int main(int argc, char *argv[])
 	cudaFree(d_ranUni);
 	cudaFree(cellCounts);
 	cudaFree(params_d);
+	cudaFree(d_IFNsum);
 	curandDestroyGenerator(gen);
 	free(tissueSum);
 	free(tissueSqSum);

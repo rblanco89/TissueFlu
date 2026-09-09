@@ -232,12 +232,23 @@ __global__ void compute_weights(Cell *cells, int numCells)
 
 // ==================================================================
 
-__device__ float hillFun(float x, float K, float n)
+__host__ __device__ float hillFun(float x, float K, float n)
 {
 	if (x <= 0.0f) return 0.0f;
     float xn = powf(x, n);
     float Kn = powf(K, n);
     return xn / (Kn + xn);
+}
+
+// ==================================================================
+
+__host__ void updateTsys(Params *params, float IFNsumAccum, int numCells)
+{
+	float IFNmean = IFNsumAccum / numCells;
+	float source = hillFun(IFNmean, params->K_ifn, params->nHill);
+	float dT = params->rho_T * source * params->T_sys - params->delta_T * params->T_sys;
+	params->T_sys += dT;
+	if (params->T_sys < 0.0f) params->T_sys = 0.0f;
 }
 
 // ==================================================================
@@ -325,6 +336,18 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 			break;
 
 		case INFECTED_PLUS:
+			if (pars->flagCTL)
+			{
+				float Pkill = hillFun(pars->T_sys, pars->K_T, nHill);
+				if (Pkill > ranUni[ind])
+				{
+					cell->state = DEAD;
+					atomicAdd(&cellCounts[INFECTED_PLUS], -1);
+					atomicAdd(&cellCounts[DEAD],            1);
+					break;
+				}
+			}
+
 			cell->infectingTime--;
 			virions = virionProduction(cell->internalTime++);
 			if (pars->flagBP) virions *= (1.0f - hillFun(cell->IFN, K_bp, nHill));  // BP mechanism
@@ -345,6 +368,18 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 			break;
 
 		case INFECTED_MINUS:
+			if (pars->flagCTL)
+			{
+				float Pkill = hillFun(pars->T_sys, pars->K_T, nHill);
+				if (Pkill > ranUni[ind])
+				{
+					cell->state = DEAD;
+					atomicAdd(&cellCounts[INFECTED_MINUS], -1);
+					atomicAdd(&cellCounts[DEAD],             1);
+					break;
+				}
+			}
+
 			cell->infectingTime--;
 			virions = virionProduction(cell->internalTime++);
 			if (pars->flagBP) virions *= (1.0f - hillFun(cell->IFN, K_bp, nHill));  // BP mechanism
@@ -365,19 +400,22 @@ __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts,
 
 // ==================================================================
 
-__global__ void copy_fields(Cell *cells, float *virions_old, float *IFN_old, int numCells)
+__global__ void copy_fields(Cell *cells, float *virions_old, float *IFN_old, int numCells,
+							 Params *pars, float *d_IFNsum)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
 
 	virions_old[ind] = cells[ind].virions;
 	IFN_old[ind]     = cells[ind].IFN;
+
+	if (pars->flagCTL) atomicAdd(d_IFNsum, cells[ind].IFN);
 }
 
 // ==================================================================
 
 __global__ void tissue_diffusion(Cell *cells, const float *virions_old, const float *IFN_old,
-								 int numCells, Params *pars) 
+								 int numCells, Params *pars)
 {
 	int ind = threadIdx.x + blockIdx.x*blockDim.x;
 	if (ind >= numCells) return;
