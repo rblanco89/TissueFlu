@@ -275,8 +275,8 @@ int main(int argc, char *argv[])
 	int numMeasures = params.timeSteps / params.measureInterval + 1;
 
 	// Arrays for averaging tissue state (7 variables: V, IFN, S, R, I, D, NP)
-	double *tissueSum = (double*)calloc(numMeasures * 7, sizeof(double));
-	double *tissueSqSum = (double*)calloc(numMeasures * 7, sizeof(double));
+	double *tissueSum = (double*)calloc(numMeasures * 8, sizeof(double));
+	double *tissueSqSum = (double*)calloc(numMeasures * 8, sizeof(double));
 
 	// Cell state counters (indexed by CellState enum): updated atomically by GPU
 	int *cellCounts;
@@ -330,7 +330,7 @@ int main(int argc, char *argv[])
 			snprintf(path_rep, sizeof(path_rep), "%s/tissueState_%d.csv", output_dir, rep+1);
 			fRep = fopen(path_rep, "w");
 			if (!fRep) fprintf(stderr, "Warning: could not open %s for writing\n", path_rep);
-			else fprintf(fRep, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive\n");
+			else fprintf(fRep, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive,Tcells\n");
 		}
 
 		// Initialize/Reset random numbers
@@ -385,7 +385,8 @@ int main(int argc, char *argv[])
 			if (step % params.measureInterval == 0)
 			{
 				tissue_metrics(cells, numCells, cellCounts, tissueSum, tissueSqSum, measureIdx++,
-							   &aucVirus, &aucIFN, &prevVirus, &prevIFN, params.measureInterval, fRep);
+							   &aucVirus, &aucIFN, &prevVirus, &prevIFN, params.measureInterval, fRep,
+							   params_d->T_sys);
 
 				if (fCell) fprintf(fCell, "%d,%f,%f\n", step, cells[ind].virions, cells[ind].IFN);
 
@@ -428,12 +429,12 @@ int main(int argc, char *argv[])
 		FILE *fTissue = fopen(path_tissueState, "w");
 		if (fTissue)
 		{
-			fprintf(fTissue, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive\n");
+			fprintf(fTissue, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive,Tcells\n");
 			for (int s=0; s<numMeasures; s++)
 			{
 				fprintf(fTissue, "%d", s*params.measureInterval);
-				int tBase = s*7;
-				for (int m=0; m<7; m++)
+				int tBase = s*8;
+				for (int m=0; m<8; m++)
 					fprintf(fTissue, ",%e", tissueSum[tBase+m]);
 				fprintf(fTissue, "\n");
 			}
@@ -446,15 +447,15 @@ int main(int argc, char *argv[])
 		FILE *fTstd = fopen(path_tissueStd, "w");
 		if (fTavg && fTstd)
 		{
-			fprintf(fTavg, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive\n");
-			fprintf(fTstd, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive\n");
+			fprintf(fTavg, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive,Tcells\n");
+			fprintf(fTstd, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive,Tcells\n");
 
 			for (int s=0; s<numMeasures; s++)
 			{
 				fprintf(fTavg, "%d", s*params.measureInterval);
 				fprintf(fTstd, "%d", s*params.measureInterval);
-				int tBase = s*7;
-				for (int m=0; m<7; m++)
+				int tBase = s*8;
+				for (int m=0; m<8; m++)
 				{
 					double avg = tissueSum[tBase+m] / params.numReplicates;
 					double var = (tissueSqSum[tBase+m] / params.numReplicates) - (avg*avg);

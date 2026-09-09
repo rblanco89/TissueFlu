@@ -49,9 +49,9 @@ __host__ void tissue_metrics(Cell *cells, int numCells, int *cellCounts,
                              double *tissueSum, double *tissueSqSum, int measureIdx,
                              double *aucVirus, double *aucIFN,
                              double *prevVirus, double *prevIFN, int measureInterval,
-                             FILE *fRep)
+                             FILE *fRep, float T_sys)
 {
-	double val[7];
+	double val[8];
 
 	double viralLoad = 0.0;
 	double IFNlevel = 0.0;
@@ -68,9 +68,10 @@ __host__ void tissue_metrics(Cell *cells, int numCells, int *cellCounts,
 	val[4] = (double)(cellCounts[INFECTED_PLUS] + cellCounts[INFECTED_MINUS]);
 	val[5] = (double)cellCounts[DEAD];
 	val[6] = (double)cellCounts[NONPERMISSIVE];
+	val[7] = (double)T_sys;
 
-	int base = measureIdx * 7;
-	for (int m = 0; m < 7; m++)
+	int base = measureIdx * 8;
+	for (int m = 0; m < 8; m++)
 	{
 		tissueSum[base + m]   += val[m];
 		tissueSqSum[base + m] += val[m] * val[m];
@@ -88,7 +89,7 @@ __host__ void tissue_metrics(Cell *cells, int numCells, int *cellCounts,
 	if (fRep)
 	{
 		fprintf(fRep, "%d", measureIdx * measureInterval);
-		for (int m = 0; m < 7; m++)
+		for (int m = 0; m < 8; m++)
 			fprintf(fRep, ",%e", val[m]);
 		fprintf(fRep, "\n");
 	}

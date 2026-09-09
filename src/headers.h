@@ -93,7 +93,7 @@ __host__ void tissue_metrics(Cell *cells, int numCells, int *cellCounts,
                              double *tissueSum, double *tissueSqSum, int measureIdx,
                              double *aucVirus, double *aucIFN,
                              double *prevVirus, double *prevIFN, int measureInterval,
-                             FILE *fRep);
+                             FILE *fRep, float T_sys);
 __host__ void print_tissueSnapshots(Cell *cells, int numCells, FILE *fSnap);
 __host__ void print_infectedSnapshots(Cell *cells, int numCells, FILE *fSnap, int numInf);
 
