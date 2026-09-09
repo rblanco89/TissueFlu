@@ -2,3 +2,4 @@
 *.xyz
 tissueFlu
 results/*
+Makefile
