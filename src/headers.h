@@ -45,6 +45,7 @@ typedef struct
 	float K_ifn;
 	float T0;
 	float K_T;
+	float T_max;
 
 	float T_sys;
 }
@@ -88,7 +89,6 @@ void parse_parameters(const char *filename);
 __host__ long nextPow2(long x);
 __host__ float stabilityCondition(Cell *cells, int numCells);
 __host__ __device__ float hillFun(float x, float K, float n);
-__host__ void updateTsys(Params *params, float IFNsumAccum, int numCells);
 __host__ void tissue_metrics(Cell *cells, int numCells, int *cellCounts,
                              double *tissueSum, double *tissueSqSum, int measureIdx,
                              double *aucVirus, double *aucIFN,
@@ -104,3 +104,4 @@ __global__ void copy_fields(Cell *cells, float *virions_old, float *IFN_old, int
 __global__ void tissue_update(Cell *cells, int numCells, int *cellCounts, Params *pars, float *d_ranUni);
 __global__ void tissue_diffusion(Cell *cells, const float *virions_old, const float *IFN_old,
 								int numCells, Params *pars);
+__global__ void update_Tsys(Params *pars, const float *d_IFNsum, int numCells);

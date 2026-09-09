@@ -42,6 +42,7 @@ void parse_parameters(const char *filename)
 	params.K_ifn = 5.0f; // IFN half-max for CTL growth gating (IFN)
 	params.T0 = 1e-4f; // initial systemic CTL pool
 	params.K_T = 5.0f; // CTL half-max for killing probability
+	params.T_max = 1000.0f; // CTL carrying capacity (logistic cap on T_sys growth)
 
 	params.virionDiffusion = 0.01f; // virion diffusion coefficient (cell diam^2 min^-1)
 	params.virionClearance = 0.0115f; // virion clearance rate (min^-1)
@@ -149,6 +150,8 @@ void parse_parameters(const char *filename)
 				params.T0 = atof(value);
 			else if (strcmp(key, "K_T ") == 0)
 				params.K_T = atof(value);
+			else if (strcmp(key, "T_max ") == 0)
+				params.T_max = atof(value);
 			else
 				fprintf(stderr, "Warning: Unknown parameter '%s' in config file.\n", key);
 		}

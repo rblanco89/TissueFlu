@@ -243,13 +243,16 @@ __host__ __device__ float hillFun(float x, float K, float n)
 
 // ==================================================================
 
-__host__ void updateTsys(Params *params, float IFNsumAccum, int numCells)
+__global__ void update_Tsys(Params *pars, const float *d_IFNsum, int numCells)
 {
-	float IFNmean = IFNsumAccum / numCells;
-	float source = hillFun(IFNmean, params->K_ifn, params->nHill);
-	float dT = params->rho_T * source * params->T_sys - params->delta_T * params->T_sys;
-	params->T_sys += dT;
-	if (params->T_sys < 0.0f) params->T_sys = 0.0f;
+	if (threadIdx.x != 0 || blockIdx.x != 0) return;
+
+	float IFNmean = *d_IFNsum / numCells;
+	float source = hillFun(IFNmean, pars->K_ifn, pars->nHill);
+	float logistic = 1.0f - pars->T_sys / pars->T_max; // caps growth as T_sys -> T_max
+	float dT = pars->rho_T * source * pars->T_sys * logistic - pars->delta_T * pars->T_sys;
+	pars->T_sys += dT;
+	if (pars->T_sys < 0.0f) pars->T_sys = 0.0f;
 }
 
 // ==================================================================

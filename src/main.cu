@@ -287,9 +287,9 @@ int main(int argc, char *argv[])
 	cudaMallocManaged(&params_d, sizeof(Params));
 	*params_d = params;
 
-	// Accumulator for the tissue-wide IFN sum (used by the CTL mechanism)
+	// Accumulator for the tissue-wide IFN sum (used by the CTL mechanism); GPU-only, never touched by host
 	float *d_IFNsum;
-	cudaMallocManaged(&d_IFNsum, sizeof(float));
+	cudaMalloc(&d_IFNsum, sizeof(float));
 
 	// Shadow arrays for race-free diffusion (read-only snapshots of virions and IFN)
 	float *virions_old, *IFN_old;
@@ -322,6 +322,10 @@ int main(int argc, char *argv[])
 	for (int rep=0; rep<params.numReplicates; rep++)
 	{
 		printf("\nRunning replicate %d/%d\n", rep+1, params.numReplicates);
+
+		// Ensure the previous replicate's async GPU work (including its last
+		// update_Tsys kernel) has fully landed before we reset host-managed state below.
+		cudaDeviceSynchronize();
 
 		FILE *fRep = NULL;
 		if (params.printReplicates && params.numReplicates > 1)
@@ -384,6 +388,10 @@ int main(int argc, char *argv[])
 
 			if (step % params.measureInterval == 0)
 			{
+				// Reads below touch GPU-managed memory (cells, cellCounts, params_d->T_sys);
+				// wait for all kernels through the previous step to land before reading.
+				cudaDeviceSynchronize();
+
 				tissue_metrics(cells, numCells, cellCounts, tissueSum, tissueSqSum, measureIdx++,
 							   &aucVirus, &aucIFN, &prevVirus, &prevIFN, params.measureInterval, fRep,
 							   params_d->T_sys);
@@ -402,13 +410,11 @@ int main(int argc, char *argv[])
 			curandGenerateUniform(gen, d_ranUni, 3*numCells);
 
 			tissue_update<<<blks, ths>>>(cells, numCells, cellCounts, params_d, d_ranUni);
-				
-			*d_IFNsum = 0.0f;
+
+			if (params.flagCTL) cudaMemsetAsync(d_IFNsum, 0, sizeof(float));
 			copy_fields<<<blks, ths>>>(cells, virions_old, IFN_old, numCells, params_d, d_IFNsum);
 			tissue_diffusion<<<blks, ths>>>(cells, virions_old, IFN_old, numCells, params_d);
-
-			cudaDeviceSynchronize();
-			if (params.flagCTL) updateTsys(params_d, *d_IFNsum, numCells);
+			if (params.flagCTL) update_Tsys<<<1, 1>>>(params_d, d_IFNsum, numCells);
 		}
 
 		if (fRep)  fclose(fRep);
