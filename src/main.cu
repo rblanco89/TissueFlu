@@ -1,6 +1,10 @@
-/* AeroFlue: Influenza simulation
+/* TissueFlu: simulation of influenza spread in the lungs of mice
    Author: Rodolfo Blanco
-   Date: April 2026 */
+   Date: April 2026
+
+   One time step is one minute.  The tissue lives in GPU memory for the whole
+   run; the host only sets up the initial condition and collects measurements.
+   The biological model itself is in model.cu. */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,7 +14,6 @@
 #include <errno.h>
 
 #include <cuda_runtime.h>
-#include <curand.h>
 
 #include "headers.h"
 #include "ranNumbers.h"
@@ -50,7 +53,6 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	// Check that both required arguments are set
 	if (config_file == NULL || structure_file == NULL)
 	{
 		fprintf(stderr,
@@ -65,236 +67,58 @@ int main(int argc, char *argv[])
 	}
 
 	/*==========================================*/
-	// Fetch structure and parameters
+	// Build the tissue
 	/*==========================================*/
 
 	parse_parameters(config_file);
-	params.T_sys = params.T0; // initialize CTL state
 
-	FILE *fp = fopen(structure_file, "r");
-	if (!fp)
-	{
-		fprintf(stderr, "Error: could not open structure file %s\n", structure_file);
-		return 1;
-	}
+	Tissue tissue;
+	TissueHost host;
+	if (!tissue_create(structure_file, &params, &tissue, &host)) return 1;
 
-	// Count number of lines (cells)
-	int numCells = 0;
-	char line[256];
-	while (fgets(line, sizeof(line), fp)) numCells++;
-	rewind(fp); // reset file pointer
-	numCells--; // Skip the header line
+	int numCells = tissue.numCells;
+	int blocks = (numCells + THREADS_PER_BLOCK - 1)/THREADS_PER_BLOCK;
 
-	if (fgets(line, sizeof(line), fp) == NULL || numCells <= 0)
-	{
-		fprintf(stderr, "Error: structure file is empty: %s\n", structure_file);
-		fclose(fp);
-		return 1;
-	}
+	/* Systemic CTL level, and the per-block IFN totals that drive it.  Both
+	   live on the GPU: the host never needs them between measurements. */
+	float *d_T_sys, *d_IFNblock;
+	cudaMalloc(&d_T_sys, sizeof(float));
+	cudaMalloc(&d_IFNblock, blocks*sizeof(float));
 
-	// Allocate memory for cells
-	Cell *cells;
-	cudaError_t err = cudaMallocManaged((void**)&cells, numCells*sizeof(Cell), cudaMemAttachGlobal);
-	if (err != cudaSuccess || cells == NULL)
-	{
-		fprintf(stderr, "cudaMallocManaged failed for cells: %s\n", cudaGetErrorString(err));
-		fclose(fp);
-		return 1;
-	}
+	measure_open(numCells);
 
-	// Read positions and initialize fields
-	for (int c=0; c<numCells; c++)
-	{
-		float3 r;
-		if (fgets(line, sizeof(line), fp) == NULL)
-		{
-			fprintf(stderr, "Unexpected end of structure file at cell %d\n", c);
-			fclose(fp);
-			cudaFree(cells);
-			return 1;
-		}
-		
-		if (sscanf(line, "%f,%f,%f", &r.x, &r.y, &r.z) != 3)
-		{
-			fprintf(stderr, "Invalid format in structure file at line %d\n", c + 2);
-			fclose(fp);
-			cudaFree(cells);
-			return 1;
-		}
-
-		cells[c].position = r;
-		cells[c].numNeighbors = 0;
-	}
-	fclose(fp);
-
-	printf("Loaded %d cells from %s\n", numCells, structure_file);
+	/* Staging buffers for the initial condition, filled on the host once per
+	   replicate and uploaded in one go (pinned memory makes the copy faster). */
+	float2 *h_field;  CellState *h_state;
+	int *h_infectingTime, *h_internalTime;
+	float *h_dsRNA;
+	cudaMallocHost(&h_field, numCells*sizeof(float2));
+	cudaMallocHost(&h_state, numCells*sizeof(CellState));
+	cudaMallocHost(&h_infectingTime, numCells*sizeof(int));
+	cudaMallocHost(&h_internalTime, numCells*sizeof(int));
+	cudaMallocHost(&h_dsRNA, numCells*sizeof(float));
 
 	/*==========================================*/
-	// Pre-simulation setup
+	// Output files
 	/*==========================================*/
 
-	// Set GPU random generator
-	float *d_ranUni;
-	curandGenerator_t gen;
-	cudaMalloc(&d_ranUni, 3*numCells*sizeof(float)); // 3 non-overlapping slots per cell
-	curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_MTGP32);
-
-	// Estimate the number of threads and blocks for the GPU
-	int ths = (numCells < THS_MAX) ? nextPow2(numCells) : THS_MAX;
-	int blks = 1 + (numCells - 1)/ths;
-
-	// Derive auto-save path for neighbor list: <structure_base>_neighbors<ext>
-	char neigh_path_buf[512];
-	{
-		const char *dot = strrchr(structure_file, '.');
-		if (dot && dot != structure_file)
-		{
-			int base_len = (int)(dot - structure_file);
-			snprintf(neigh_path_buf, sizeof(neigh_path_buf),
-					"%.*s_neighbors_r%d%s", base_len, structure_file,
-					int(params.neighRadius), dot);
-		}
-		else
-		{
-			snprintf(neigh_path_buf, sizeof(neigh_path_buf), "%s_neighbors_r%d",
-					 structure_file, int(params.neighRadius));
-		}
-	}
-
-	FILE *fNeigh = fopen(neigh_path_buf, "r");
-	if (fNeigh)
-	{
-		char nline[MAX_NEIGHBORS * 8 + 32];
-		for (int c = 0; c < numCells; c++)
-		{
-			if (fgets(nline, sizeof(nline), fNeigh) == NULL)
-			{
-				fprintf(stderr, "Error: neighbor file too short at cell %d\n", c);
-				fclose(fNeigh);
-				cudaFree(cells);
-				cudaFree(d_ranUni);
-				curandDestroyGenerator(gen);
-				return 1;
-			}
-			char *tok = strtok(nline, ",\n");
-			cells[c].numNeighbors = atoi(tok);
-			if (cells[c].numNeighbors > MAX_NEIGHBORS)
-			{
-				fprintf(stderr, "Error: cell %d has %d neighbors in file, exceeding MAX_NEIGHBORS (%d)\n",
-						c, cells[c].numNeighbors, MAX_NEIGHBORS);
-				fclose(fNeigh);
-				cudaFree(cells);
-				cudaFree(d_ranUni);
-				curandDestroyGenerator(gen);
-				return 1;
-			}
-			for (int n = 0; n < cells[c].numNeighbors; n++)
-			{
-				tok = strtok(NULL, ",\n");
-				if (tok == NULL)
-				{
-					fprintf(stderr, "Error: malformed neighbor entry for cell %d\n", c);
-					fclose(fNeigh);
-					cudaFree(cells);
-					cudaFree(d_ranUni);
-					curandDestroyGenerator(gen);
-					return 1;
-				}
-				cells[c].neighbors[n] = atoi(tok);
-			}
-		}
-		fclose(fNeigh);
-		printf("Loaded neighbor list from %s\n", neigh_path_buf);
-
-		// Compute 1/d^2 weights from the loaded neighbor indices
-		compute_weights<<<blks, ths>>>(cells, numCells);
-		cudaDeviceSynchronize();
-	}
-	else
-	{
-		printf("Creating list of neighbors...\n");
-
-		// Find neighbors, store indices and 1/d² weights in cell structure
-		int *d_overflowFlag;
-		cudaMallocManaged(&d_overflowFlag, sizeof(int));
-		*d_overflowFlag = 0;
-		build_neighbors<<<blks, ths>>>(cells, numCells, params.neighRadius, d_overflowFlag);
-		cudaDeviceSynchronize();
-		if (*d_overflowFlag)
-		{
-			fprintf(stderr, "Error: neighbor list overflow. Increase MAX_NEIGHBORS or reduce neighRadius.\n");
-			cudaFree(d_overflowFlag);
-			cudaFree(cells);
-			cudaFree(d_ranUni);
-			curandDestroyGenerator(gen);
-			return 1;
-		}
-		cudaFree(d_overflowFlag);
-
-		// Save neighbor list next to the structure file
-		printf("Saving neighbor list to %s...\n", neigh_path_buf);
-		FILE *fSave = fopen(neigh_path_buf, "w");
-		if (!fSave)
-		{
-			fprintf(stderr, "Warning: could not save neighbor list to %s\n", neigh_path_buf);
-		}
-		else
-		{
-			for (int c = 0; c < numCells; c++)
-			{
-				fprintf(fSave, "%d", cells[c].numNeighbors);
-				for (int n = 0; n < cells[c].numNeighbors; n++)
-					fprintf(fSave, ",%d", cells[c].neighbors[n]);
-				fprintf(fSave, "\n");
-			}
-			fclose(fSave);
-		}
-	}
-
-	// Create output directory if it does not exist
 	if (mkdir(output_dir, 0755) != 0 && errno != EEXIST)
 	{
 		fprintf(stderr, "Error: could not create output directory %s\n", output_dir);
-		cudaFree(cells);
-		cudaFree(d_ranUni);
-		curandDestroyGenerator(gen);
 		return 1;
 	}
 
-	// Build output file paths
-	char path_snapshots[512], path_cellState[512];
-	char path_tissueState[512], path_tissueAvg[512], path_tissueStd[512], path_auc[512];
-	snprintf(path_snapshots,  sizeof(path_snapshots),  "%s/snapshots.xyz",       output_dir);
-	snprintf(path_cellState,  sizeof(path_cellState),  "%s/cellState.csv",       output_dir);
-	snprintf(path_tissueState,sizeof(path_tissueState),"%s/tissueState.csv",     output_dir);
-	snprintf(path_tissueAvg,  sizeof(path_tissueAvg),  "%s/tissueState_avg.csv", output_dir);
-	snprintf(path_tissueStd,  sizeof(path_tissueStd),  "%s/tissueState_std.csv", output_dir);
-	snprintf(path_auc,        sizeof(path_auc),        "%s/auc_results.csv",     output_dir);
+	char path_snapshots[512], path_cellState[512], path_auc[512];
+	snprintf(path_snapshots, sizeof(path_snapshots), "%s/snapshots.xyz",   output_dir);
+	snprintf(path_cellState, sizeof(path_cellState), "%s/cellState.csv",   output_dir);
+	snprintf(path_auc,       sizeof(path_auc),       "%s/auc_results.csv", output_dir);
 
-	// Prepare for result accumulation
-	int numMeasures = params.timeSteps / params.measureInterval + 1;
+	const char *header = "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive,Tcells\n";
 
-	// Arrays for averaging tissue state (7 variables: V, IFN, S, R, I, D, NP)
-	double *tissueSum = (double*)calloc(numMeasures * 8, sizeof(double));
-	double *tissueSqSum = (double*)calloc(numMeasures * 8, sizeof(double));
-
-	// Cell state counters (indexed by CellState enum): updated atomically by GPU
-	int *cellCounts;
-	cudaMallocManaged(&cellCounts, 6 * sizeof(int));
-
-	// Device-accessible copy of the host-parsed params for the kernels.
-	Params *params_d;
-	cudaMallocManaged(&params_d, sizeof(Params));
-	*params_d = params;
-
-	// Accumulator for the tissue-wide IFN sum (used by the CTL mechanism); GPU-only, never touched by host
-	float *d_IFNsum;
-	cudaMalloc(&d_IFNsum, sizeof(float));
-
-	// Shadow arrays for race-free diffusion (read-only snapshots of virions and IFN)
-	float *virions_old, *IFN_old;
-	cudaMalloc(&virions_old, numCells*sizeof(float));
-	cudaMalloc(&IFN_old,     numCells*sizeof(float));
+	if (params.tissueSeed >= 0)
+		printf("Non-permissive cells: fixed layout from tissueSeed = %d\n", params.tissueSeed);
+	else
+		printf("Non-permissive cells: new layout for every replicate\n");
 
 	FILE *fAUC = fopen(path_auc, "w");
 	if (!fAUC) fprintf(stderr, "Warning: could not open %s for writing\n", path_auc);
@@ -312,184 +136,135 @@ int main(int argc, char *argv[])
 	{
 		fCell = fopen(path_cellState, "w");
 		if (!fCell) fprintf(stderr, "Warning: could not open %s for writing\n", path_cellState);
-		fprintf(fCell, "Time,ViralLoad,IFN\n");
+		else fprintf(fCell, "Time,ViralLoad,IFN\n");
 	}
 
 	/*==========================================*/
 	// Replicates Loop
 	/*==========================================*/
 
-	for (int rep=0; rep<params.numReplicates; rep++)
+	for (int rep = 0; rep < params.numReplicates; rep++)
 	{
 		printf("\nRunning replicate %d/%d\n", rep+1, params.numReplicates);
 
-		// Ensure the previous replicate's async GPU work (including its last
-		// update_Tsys kernel) has fully landed before we reset host-managed state below.
-		cudaDeviceSynchronize();
+		// Time course of this replicate (averaging is left to the analysis scripts)
+		char path_rep[512];
+		snprintf(path_rep, sizeof(path_rep), "%s/tissueState_%d.csv", output_dir, rep+1);
+		FILE *fRep = fopen(path_rep, "w");
+		if (!fRep) fprintf(stderr, "Warning: could not open %s for writing\n", path_rep);
+		else fprintf(fRep, "%s", header);
 
-		FILE *fRep = NULL;
-		if (params.printReplicates && params.numReplicates > 1)
-		{
-			char path_rep[512];
-			snprintf(path_rep, sizeof(path_rep), "%s/tissueState_%d.csv", output_dir, rep+1);
-			fRep = fopen(path_rep, "w");
-			if (!fRep) fprintf(stderr, "Warning: could not open %s for writing\n", path_rep);
-			else fprintf(fRep, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive,Tcells\n");
-		}
+		/*------------------------------------------*/
+		// Initial condition
+		/*------------------------------------------*/
 
-		// Initialize/Reset random numbers
-		ulong seed = params.ranSeed + rep;
+		unsigned long long seed = (unsigned long long)params.ranSeed + rep;
 		Ran ranUni(seed);
-		Poissondev ranInfecting(params.infectingPeriod/60, seed^0x9E3779B9); // Convert to hours
-		curandSetPseudoRandomGeneratorSeed(gen, seed);
+		Poissondev ranInfecting(params.infectingPeriod/60, seed^0x9E3779B9); // hours
 
-		// Reset cells state
-		memset(cellCounts, 0, 6 * sizeof(int));
-		params_d->T_sys = params.T0; // reset CTL state
-		for (int i=0; i<numCells; i++)
+		// Which cells are non-permissive.  With tissueSeed set, a generator
+		// restarted from that seed gives the same layout in every replicate and
+		// every run; otherwise the layout is part of the replicate's randomness.
+		Ran ranTissue(params.tissueSeed >= 0 ? params.tissueSeed : 0);
+		Ran &ranLayout = (params.tissueSeed >= 0) ? ranTissue : ranUni;
+
+		// Drawn in the order of the structure file, so the initial condition
+		// does not depend on the internal ordering of the cells.
+		for (int o = 0; o < numCells; o++)
 		{
-			if (ranUni.doub() < params.nonPermProb) cells[i].state = NONPERMISSIVE;
-			else cells[i].state = SUSCEPTIBLE;
-		
-			cellCounts[cells[i].state]++;
-
-			cells[i].virions = 0.0f;
-			cells[i].dsRNA = 0.0f;
-			cells[i].IFN = 0.0f;
-			cells[i].infectingTime = 60*ranInfecting.dev(); // Convert to minutes
-			cells[i].internalTime = 0;
+			int c = host.slotOf[o];
+			h_state[c] = (ranLayout.doub() < params.nonPermProb) ? NONPERMISSIVE : SUSCEPTIBLE;
+			h_field[c] = make_float2(0.0f, 0.0f);
+			h_dsRNA[c] = 0.0f;
+			h_infectingTime[c] = 60*ranInfecting.dev();   // hours -> minutes
+			h_internalTime[c] = 0;
 		}
 
-		int ind = 0;
-		for (int i=0; i<params.numInfections; i++)
+		// Deposit the inoculum on randomly chosen cells (differs per replicate)
+		int tracked = 0;
+		for (int n = 0; n < params.numInfections; n++)
 		{
-			do ind = numCells*ranUni.doub();
-			while (cells[ind].virions > 0.0f);
-			cells[ind].virions = params.initialVirions;
+			int o;
+			do o = numCells*ranUni.doub();
+			while (h_field[host.slotOf[o]].x > 0.0f);
+			h_field[host.slotOf[o]].x = params.initialVirions;
+			tracked = host.slotOf[o];   // cellState.csv follows the last one
 		}
 
-		// Infecting a central cell of a rectangle tissue
-		// ind = numCells/2 + 149; // 300 x 300 square tissue
-		// ind = 27332; // lung windows selection
-		// cells[ind].state = INFECTED_PLUS;
-		// cells[ind].virions = params.initialVirions;
+		cudaMemcpy(tissue.field, h_field, numCells*sizeof(float2), cudaMemcpyHostToDevice);
+		cudaMemcpy(tissue.state, h_state, numCells*sizeof(CellState), cudaMemcpyHostToDevice);
+		cudaMemcpy(tissue.dsRNA, h_dsRNA, numCells*sizeof(float), cudaMemcpyHostToDevice);
+		cudaMemcpy(tissue.infectingTime, h_infectingTime, numCells*sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemcpy(tissue.internalTime, h_internalTime, numCells*sizeof(int), cudaMemcpyHostToDevice);
+		cudaMemcpy(d_T_sys, &params.T0, sizeof(float), cudaMemcpyHostToDevice);
 
 		/*==========================================*/
 		// Simulation Loop
 		/*==========================================*/
+
 		int measureIdx = 0;
 		double aucVirus = 0.0, aucIFN = 0.0;
 		double prevVirus = 0.0, prevIFN = 0.0;
-		int progressInterval = params.timeSteps / 10;
+		int progressInterval = params.timeSteps/10;
 		if (progressInterval == 0) progressInterval = 1;
-		for (int step=0; step<=params.timeSteps; step++)
+
+		for (int step = 0; step <= params.timeSteps; step++)
 		{
-			if (step % progressInterval == 0) printf("."); fflush(stdout);
+			if (step % progressInterval == 0) { printf("."); fflush(stdout); }
 
 			if (step % params.measureInterval == 0)
 			{
-				// Reads below touch GPU-managed memory (cells, cellCounts, params_d->T_sys);
-				// wait for all kernels through the previous step to land before reading.
-				cudaDeviceSynchronize();
+				TissueState now;
+				measure_tissue(&tissue, d_T_sys, &now);
+				record_measurement(&now, measureIdx++, params.measureInterval,
+				                   &aucVirus, &aucIFN, &prevVirus, &prevIFN, fRep);
 
-				tissue_metrics(cells, numCells, cellCounts, tissueSum, tissueSqSum, measureIdx++,
-							   &aucVirus, &aucIFN, &prevVirus, &prevIFN, params.measureInterval, fRep,
-							   params_d->T_sys);
-
-				if (fCell) fprintf(fCell, "%d,%f,%f\n", step, cells[ind].virions, cells[ind].IFN);
-
-				if (fSnap) 
+				if (fCell)
 				{
-					if (params.printSnap == 2) print_infectedSnapshots(cells, numCells, fSnap,
-													cellCounts[INFECTED_PLUS] + cellCounts[INFECTED_MINUS]);
-					else print_tissueSnapshots(cells, numCells, fSnap);
+					float2 one;
+					cudaMemcpy(&one, tissue.field + tracked, sizeof(float2),
+					           cudaMemcpyDeviceToHost);
+					fprintf(fCell, "%d,%f,%f\n", step, one.x, one.y);
 				}
 			}
 
-			// Generate GPU random numbers (3 non-overlapping draws per cell)
-			curandGenerateUniform(gen, d_ranUni, 3*numCells);
+			if (fSnap && step % params.snapInterval == 0)
+				print_snapshot(&tissue, &host, fSnap, params.printSnap == 2);
 
-			tissue_update<<<blks, ths>>>(cells, numCells, cellCounts, params_d, d_ranUni);
+			// 1. what happens inside each cell
+			tissue_update<<<blocks, THREADS_PER_BLOCK>>>(tissue, params, d_T_sys, seed, step);
 
-			if (params.flagCTL) cudaMemsetAsync(d_IFNsum, 0, sizeof(float));
-			copy_fields<<<blks, ths>>>(cells, virions_old, IFN_old, numCells, params_d, d_IFNsum);
-			tissue_diffusion<<<blks, ths>>>(cells, virions_old, IFN_old, numCells, params_d);
-			if (params.flagCTL) update_Tsys<<<1, 1>>>(params_d, d_IFNsum, numCells);
+			// 2. transport of virions and IFN between cells
+			tissue_diffusion<<<blocks, THREADS_PER_BLOCK>>>(tissue, params, d_IFNblock);
+
+			// 3. the systemic CTL response
+			if (params.flagCTL)
+				update_Tsys<<<1, THREADS_PER_BLOCK>>>(params, d_T_sys, d_IFNblock,
+				                                      blocks, numCells);
+
+			// diffusion wrote the new fields into fieldNext; make them current
+			float2 *swap = tissue.field; tissue.field = tissue.fieldNext; tissue.fieldNext = swap;
 		}
 
-		if (fRep)  fclose(fRep);
-		if (fCell) fclose(fCell);
-		if (fSnap) fclose(fSnap);
-
+		if (fRep) fclose(fRep);
 		if (fAUC) fprintf(fAUC, "%d,%e,%e\n", rep+1, aucVirus, aucIFN);
 	}
 
-	if (fAUC) fclose(fAUC);
-
-	/*==========================================*/
-	// Finalize results: Average and Std Dev
-	/*==========================================*/
-
-	if (params.numReplicates == 1)
-	{
-		FILE *fTissue = fopen(path_tissueState, "w");
-		if (fTissue)
-		{
-			fprintf(fTissue, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive,Tcells\n");
-			for (int s=0; s<numMeasures; s++)
-			{
-				fprintf(fTissue, "%d", s*params.measureInterval);
-				int tBase = s*8;
-				for (int m=0; m<8; m++)
-					fprintf(fTissue, ",%e", tissueSum[tBase+m]);
-				fprintf(fTissue, "\n");
-			}
-			fclose(fTissue);
-		}
-	}
-	else
-	{
-		FILE *fTavg = fopen(path_tissueAvg, "w");
-		FILE *fTstd = fopen(path_tissueStd, "w");
-		if (fTavg && fTstd)
-		{
-			fprintf(fTavg, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive,Tcells\n");
-			fprintf(fTstd, "Time,Virus,IFN,Susceptible,Refractory,Infected,Dead,nonPermissive,Tcells\n");
-
-			for (int s=0; s<numMeasures; s++)
-			{
-				fprintf(fTavg, "%d", s*params.measureInterval);
-				fprintf(fTstd, "%d", s*params.measureInterval);
-				int tBase = s*8;
-				for (int m=0; m<8; m++)
-				{
-					double avg = tissueSum[tBase+m] / params.numReplicates;
-					double var = (tissueSqSum[tBase+m] / params.numReplicates) - (avg*avg);
-					double sdev = sqrt(fmax(0.0, var));
-					fprintf(fTavg, ",%e", avg);
-					fprintf(fTstd, ",%e", sdev);
-				}
-				fprintf(fTavg, "\n");
-				fprintf(fTstd, "\n");
-			}
-			fclose(fTavg);
-			fclose(fTstd);
-		}
-	}
+	if (fCell) fclose(fCell);
+	if (fSnap) fclose(fSnap);
+	if (fAUC)  fclose(fAUC);
 
 	printf("\nCompleted\n");
 
+	/*==========================================*/
 	// Clean up
-	cudaFree(cells);
-	cudaFree(virions_old);
-	cudaFree(IFN_old);
-	cudaFree(d_ranUni);
-	cudaFree(cellCounts);
-	cudaFree(params_d);
-	cudaFree(d_IFNsum);
-	curandDestroyGenerator(gen);
-	free(tissueSum);
-	free(tissueSqSum);
+	/*==========================================*/
+
+	cudaFreeHost(h_field); cudaFreeHost(h_state); cudaFreeHost(h_dsRNA);
+	cudaFreeHost(h_infectingTime); cudaFreeHost(h_internalTime);
+	cudaFree(d_T_sys); cudaFree(d_IFNblock);
+	measure_close();
+	tissue_destroy(&tissue, &host);
 
 	return 0;
 }

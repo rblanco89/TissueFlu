@@ -1,162 +1,190 @@
+/* TissueFlu - reading the configuration file
+ *
+ * The file holds one "name = value" pair per line; '#' starts a comment,
+ * either on its own line or after a value.
+ * To add a new parameter: declare it in headers.h, give it a default below,
+ * and add one line to the corresponding table.
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "headers.h"
 
 Params params;  // global struct
 
-void parse_parameters(const char *filename)
+__host__ Hill make_hill(float K, float n)
 {
-	// Set default values
-	params.timeSteps = 1000;
-	params.numInfections = 1;
-	params.initialVirions = 1.0f;
-	params.numReplicates = 1;
-	params.neighRadius = 2.0f;
+	Hill h;
+	h.K = K;
+	h.n = n;
+	h.Kn = powf(K, n);
+	return h;
+}
 
-	params.infectingPeriod = 1800; // 30 hours
+static void set_defaults(void)
+{
+	/* Simulation control */
+	params.timeSteps = 1000;
+	params.numReplicates = 1;
+	params.measureInterval = 60;
+	params.snapInterval = 60;
+	params.printSnap = 0;
+	params.ranSeed = 42;
+	params.tissueSeed = -1;   // not set: non-permissive cells redrawn per replicate
+
+	/* Tissue and initial condition */
+	params.numInfections = 1;
+	params.infectingPeriod = 1800;   // 30 hours
+	params.neighRadius = 2.0f;
 	params.nonPermProb = 0.0f;
+	params.initialVirions = 1.0f;
 	params.IFNcellProb = 0.0f;
 
-	params.pFmax = 1.0f; // max IFN production rate (IFN min^-1 dsRNA^-1)
-	params.k_syn = 1.0f; // dsRNA synthesis rate (dsRNA min^-1 virions^-1)
-	params.k_deg = 0.15f / 60.0f; // dsRNA degradation rate (min^-1)
+	/* Mechanism switches: all feedbacks off by default */
+	params.flagRefrac = 0;
+	params.flagSupp = 0;
+	params.flagBP = 0;
+	params.flagPF = 0;
+	params.flagPorousDiff = 0;
+	params.flagCTL = 0;
 
-	params.flagRefrac = 0; // default: refractory mechanism OFF
-	params.flagSupp = 0; // default: infection suppression OFF
-	params.flagBP = 0; // default: BP mechanism OFF
-	params.flagPF = 0; // default: PF mechanism OFF
-	params.flagPorousDiff = 0; // default: porous diffusion OFF
-	params.flagCTL = 0; // default: CTL killing mechanism OFF
+	/* Extracellular transport */
+	params.virionDiffusion = 0.01f;
+	params.virionClearance = 0.0115f;
+	params.IFNdiffusion = 0.04f;
+	params.IFNclearance = 0.005760f;
 
-	params.K_r = 10.0f; // IFN half-max for refractory mechanism (IFN)
-	params.K_s = 5.0f; // IFN half-max for suppression mechanism (IFN)
-	params.K_v = 3.0f; // virion half-max for infection mechanism (log10(virions))
-	params.K_bp = 5.0f; // IFN half-max for BP mechanism (IFN)
-	params.K_pf = 5.0f; // IFN half-max for PF mechanism (IFN)
-	params.alpha_pf = 1.0f; // PF mechanism enhancement factor (unitless)
-	params.nHill = 2.0f; // Hill coefficient (unitless)
+	/* Intracellular IFN circuit */
+	params.pFmax = 1.0f;
+	params.k_syn = 1.0f;
+	params.k_deg = 0.15f/60.0f;
+	params.alpha_pf = 1.0f;
 
-	params.rho_T = 0.01f; // CTL autocatalytic growth rate (min^-1)
-	params.delta_T = 0.002f; // CTL decay rate (min^-1)
-	params.K_ifn = 5.0f; // IFN half-max for CTL growth gating (IFN)
-	params.T0 = 1e-4f; // initial systemic CTL pool
-	params.K_T = 5.0f; // CTL half-max for killing probability
-	params.T_max = 1000.0f; // CTL carrying capacity (logistic cap on T_sys growth)
+	/* Systemic CTL compartment */
+	params.rho_T = 0.01f;
+	params.delta_T = 0.002f;
+	params.T0 = 1e-4f;
+	params.T_max = 1000.0f;
 
-	params.virionDiffusion = 0.01f; // virion diffusion coefficient (cell diam^2 min^-1)
-	params.virionClearance = 0.0115f; // virion clearance rate (min^-1)
-	params.IFNdiffusion = 0.04f; // IFN diffusion coefficient (cell diam^2 min^-1)
-	params.IFNclearance = 0.005760f; // IFN clearance rate (min^-1)
+	/* Dose-response curves (half-maxima; the exponent is shared) */
+	params.nHill     = 2.0f;
+	params.refrac    = make_hill(10.0f, 2.0f);
+	params.suppress  = make_hill( 5.0f, 2.0f);
+	params.infect    = make_hill( 3.0f, 2.0f);
+	params.blockProd = make_hill( 5.0f, 2.0f);
+	params.posFeed   = make_hill( 5.0f, 2.0f);
+	params.ctlKill   = make_hill( 5.0f, 2.0f);
+	params.ctlGrowth = make_hill( 5.0f, 2.0f);
+}
 
-	params.printSnap = 0;
-	params.snapInterval = 60;
-	params.measureInterval = 60;
-	params.printReplicates = 0;
+/* Strip leading and trailing blanks in place. */
+static char *trim(char *s)
+{
+	while (*s == ' ' || *s == '\t') s++;
+	char *end = s + strlen(s);
+	while (end > s && (end[-1] == ' ' || end[-1] == '\t' ||
+	                   end[-1] == '\n' || end[-1] == '\r')) end--;
+	*end = '\0';
+	return s;
+}
 
-	params.ranSeed = 42; // default random seed
-	
+void parse_parameters(const char *filename)
+{
+	set_defaults();
+
+	struct { const char *name; int *dst; } intParams[] =
+	{
+		{"timeSteps",        &params.timeSteps},
+		{"numReplicates",    &params.numReplicates},
+		{"measureInterval",  &params.measureInterval},
+		{"snapshotInterval", &params.snapInterval},
+		{"printSnapshots",   &params.printSnap},
+		{"ranSeed",          &params.ranSeed},
+		{"tissueSeed",       &params.tissueSeed},
+		{"numInfections",    &params.numInfections},
+		{"infectingPeriod",  &params.infectingPeriod},
+		{"flagRefrac",       &params.flagRefrac},
+		{"flagSupp",         &params.flagSupp},
+		{"flagBP",           &params.flagBP},
+		{"flagPF",           &params.flagPF},
+		{"flagPorousDiff",   &params.flagPorousDiff},
+		{"flagCTL",          &params.flagCTL},
+	};
+
+	struct { const char *name; float *dst; } floatParams[] =
+	{
+		{"neighRadius",              &params.neighRadius},
+		{"nonPermissiveProbability", &params.nonPermProb},
+		{"initialVirions",           &params.initialVirions},
+		{"IFNcellProbability",       &params.IFNcellProb},
+		{"virionDiffusion",          &params.virionDiffusion},
+		{"virionClearance",          &params.virionClearance},
+		{"IFNdiffusion",             &params.IFNdiffusion},
+		{"IFNclearance",             &params.IFNclearance},
+		{"pFmax",                    &params.pFmax},
+		{"k_syn",                    &params.k_syn},
+		{"k_deg",                    &params.k_deg},
+		{"alpha_pf",                 &params.alpha_pf},
+		{"rho_T",                    &params.rho_T},
+		{"delta_T",                  &params.delta_T},
+		{"T0",                       &params.T0},
+		{"T_max",                    &params.T_max},
+		{"nHill",                    &params.nHill},
+		/* half-maxima of the dose-response curves */
+		{"K_r",   &params.refrac.K},
+		{"K_s",   &params.suppress.K},
+		{"K_v",   &params.infect.K},
+		{"K_bp",  &params.blockProd.K},
+		{"K_pf",  &params.posFeed.K},
+		{"K_T",   &params.ctlKill.K},
+		{"K_ifn", &params.ctlGrowth.K},
+	};
+
+	const int numInts = sizeof(intParams)/sizeof(intParams[0]);
+	const int numFloats = sizeof(floatParams)/sizeof(floatParams[0]);
+
 	FILE *file = fopen(filename, "r");
 	if (!file)
 	{
-        	perror("Could not open config file");
-        	exit(1);
+		perror("Could not open config file");
+		exit(1);
 	}
 
 	char line[256];
 	while (fgets(line, sizeof(line), file))
 	{
-		char key[64], value[128];
+		char *comment = strchr(line, '#');
+		if (comment) *comment = '\0';
 
-		if (line[0] == '#' || line[0] == '\n')
-			continue; // skip comments and blank lines
+		char *eq = strchr(line, '=');
+		if (!eq) continue;
+		*eq = '\0';
 
-		if (sscanf(line, "%[^=]=%s", key, value) == 2)
-		{
-			if (strcmp(key, "timeSteps ") == 0)
-				params.timeSteps = atoi(value);
-			else if (strcmp(key, "numInfections ") == 0)
-				params.numInfections = atoi(value);
-			else if (strcmp(key, "infectingPeriod ") == 0)
-				params.infectingPeriod = atoi(value);
-			else if (strcmp(key, "ranSeed ") == 0)
-				params.ranSeed = atoi(value);
-			else if (strcmp(key, "printSnapshots ") == 0)
-				params.printSnap = atoi(value);
-			else if (strcmp(key, "snapshotInterval ") == 0)
-				params.snapInterval = atoi(value);
-			else if (strcmp(key, "measureInterval ") == 0)
-				params.measureInterval = atoi(value);
-			else if (strcmp(key, "numReplicates ") == 0)
-				params.numReplicates = atoi(value);
-			else if (strcmp(key, "flagRefrac ") == 0)
-				params.flagRefrac = atoi(value);
-			else if (strcmp(key, "flagSupp ") == 0)
-				params.flagSupp = atoi(value);
-			else if (strcmp(key, "flagBP ") == 0)
-				params.flagBP = atoi(value);
-			else if (strcmp(key, "flagPF ") == 0)
-				params.flagPF = atoi(value);
-			else if (strcmp(key, "flagPorousDiff ") == 0)
-				params.flagPorousDiff = atoi(value);
-			else if (strcmp(key, "flagCTL ") == 0)
-				params.flagCTL = atoi(value);
-			else if (strcmp(key, "printReplicates ") == 0)
-				params.printReplicates = atoi(value);
+		char *key = trim(line);
+		char *value = trim(eq + 1);
+		if (!*key) continue;
 
-			else if (strcmp(key, "neighRadius ") == 0)
-				params.neighRadius = atof(value);
-			else if (strcmp(key, "nonPermissiveProbability ") == 0)
-				params.nonPermProb = atof(value);
-			else if (strcmp(key, "initialVirions ") == 0)
-				params.initialVirions = atof(value);
-			else if (strcmp(key, "virionDiffusion ") == 0)
-				params.virionDiffusion = atof(value);
-			else if (strcmp(key, "virionClearance ") == 0)
-				params.virionClearance = atof(value);
-			else if (strcmp(key, "IFNcellProbability ") == 0)
-				params.IFNcellProb = atof(value);
-			else if (strcmp(key, "IFNdiffusion ") == 0)
-				params.IFNdiffusion = atof(value);
-			else if (strcmp(key, "IFNclearance ") == 0)
-				params.IFNclearance = atof(value);
-			else if (strcmp(key, "K_r ") == 0)
-				params.K_r = atof(value);
-			else if (strcmp(key, "K_s ") == 0)
-				params.K_s = atof(value);
-			else if (strcmp(key, "K_v ") == 0)
-				params.K_v = atof(value);
-			else if (strcmp(key, "K_bp ") == 0)
-				params.K_bp = atof(value);
-			else if (strcmp(key, "K_pf ") == 0)
-				params.K_pf = atof(value);
-			else if (strcmp(key, "alpha_pf ") == 0)
-				params.alpha_pf = atof(value);
-			else if (strcmp(key, "nHill ") == 0)
-				params.nHill = atof(value);
-			else if (strcmp(key, "k_syn ") == 0)
-				params.k_syn = atof(value);
-			else if (strcmp(key, "k_deg ") == 0)
-				params.k_deg = atof(value);
-			else if (strcmp(key, "pFmax ") == 0)
-				params.pFmax = atof(value);
-			else if (strcmp(key, "rho_T ") == 0)
-				params.rho_T = atof(value);
-			else if (strcmp(key, "delta_T ") == 0)
-				params.delta_T = atof(value);
-			else if (strcmp(key, "K_ifn ") == 0)
-				params.K_ifn = atof(value);
-			else if (strcmp(key, "T0 ") == 0)
-				params.T0 = atof(value);
-			else if (strcmp(key, "K_T ") == 0)
-				params.K_T = atof(value);
-			else if (strcmp(key, "T_max ") == 0)
-				params.T_max = atof(value);
-			else
-				fprintf(stderr, "Warning: Unknown parameter '%s' in config file.\n", key);
-		}
+		int found = 0;
+		for (int i = 0; i < numInts && !found; i++)
+			if (strcmp(key, intParams[i].name) == 0)
+			{ *intParams[i].dst = atoi(value); found = 1; }
+		for (int i = 0; i < numFloats && !found; i++)
+			if (strcmp(key, floatParams[i].name) == 0)
+			{ *floatParams[i].dst = (float)atof(value); found = 1; }
+
+		if (!found)
+			fprintf(stderr, "Warning: Unknown parameter '%s' in config file.\n", key);
 	}
-
 	fclose(file);
-}
 
+	/* All dose-response curves share the exponent nHill; cache K^n now that
+	   both K and n are known. */
+	params.refrac    = make_hill(params.refrac.K,    params.nHill);
+	params.suppress  = make_hill(params.suppress.K,  params.nHill);
+	params.infect    = make_hill(params.infect.K,    params.nHill);
+	params.blockProd = make_hill(params.blockProd.K, params.nHill);
+	params.posFeed   = make_hill(params.posFeed.K,   params.nHill);
+	params.ctlKill   = make_hill(params.ctlKill.K,   params.nHill);
+	params.ctlGrowth = make_hill(params.ctlGrowth.K, params.nHill);
+}
