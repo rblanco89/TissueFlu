@@ -29,6 +29,8 @@ static void set_defaults(void)
 	params.numReplicates = 1;
 	params.measureInterval = 60;
 	params.snapInterval = 60;
+	params.stateInterval = 0;
+	params.stateFields = 0;
 	params.printSnap = 0;
 	params.ranSeed = 42;
 	params.tissueSeed = -1;   // not set: non-permissive cells redrawn per replicate
@@ -99,6 +101,8 @@ void parse_parameters(const char *filename)
 		{"numReplicates",    &params.numReplicates},
 		{"measureInterval",  &params.measureInterval},
 		{"snapshotInterval", &params.snapInterval},
+		{"stateInterval",    &params.stateInterval},
+		{"stateFields",      &params.stateFields},
 		{"printSnapshots",   &params.printSnap},
 		{"ranSeed",          &params.ranSeed},
 		{"tissueSeed",       &params.tissueSeed},

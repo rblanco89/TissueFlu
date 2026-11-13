@@ -180,7 +180,11 @@ int main(int argc, char *argv[])
 			h_internalTime[c] = 0;
 		}
 
-		// Deposit the inoculum on randomly chosen cells (differs per replicate)
+		// Deposit the inoculum on randomly chosen cells (differs per replicate);
+		// inoculum_<n>.csv lists their lines in the structure file (0-based)
+		char path_inoc[512];
+		snprintf(path_inoc, sizeof(path_inoc), "%s/inoculum_%d.csv", output_dir, rep+1);
+		FILE *fInoc = fopen(path_inoc, "w");
 		int tracked = 0;
 		for (int n = 0; n < params.numInfections; n++)
 		{
@@ -189,6 +193,24 @@ int main(int argc, char *argv[])
 			while (h_field[host.slotOf[o]].x > 0.0f);
 			h_field[host.slotOf[o]].x = params.initialVirions;
 			tracked = host.slotOf[o];   // cellState.csv follows the last one
+			if (fInoc) fprintf(fInoc, "%d\n", o);
+		}
+		if (fInoc) fclose(fInoc);
+
+		// Optional per-cell frames, in structure-file order: one uint8 state per
+		// cell per frame (states_<n>.bin) and, with stateFields, float32 virions
+		// then float32 IFN per cell per frame (fields_<n>.bin).
+		FILE *fStates = NULL, *fFields = NULL;
+		if (params.stateInterval > 0)
+		{
+			char p[512];
+			snprintf(p, sizeof(p), "%s/states_%d.bin", output_dir, rep+1);
+			fStates = fopen(p, "wb");
+			if (params.stateFields)
+			{
+				snprintf(p, sizeof(p), "%s/fields_%d.bin", output_dir, rep+1);
+				fFields = fopen(p, "wb");
+			}
 		}
 
 		cudaMemcpy(tissue.field, h_field, numCells*sizeof(float2), cudaMemcpyHostToDevice);
@@ -228,6 +250,9 @@ int main(int argc, char *argv[])
 				}
 			}
 
+			if (fStates && step % params.stateInterval == 0)
+				write_state_frame(&tissue, &host, h_state, h_field, fStates, fFields);
+
 			if (fSnap && step % params.snapInterval == 0)
 				print_snapshot(&tissue, &host, fSnap, params.printSnap == 2);
 
@@ -247,6 +272,8 @@ int main(int argc, char *argv[])
 		}
 
 		if (fRep) fclose(fRep);
+		if (fStates) fclose(fStates);
+		if (fFields) fclose(fFields);
 		if (fAUC) fprintf(fAUC, "%d,%e,%e\n", rep+1, aucVirus, aucIFN);
 	}
 

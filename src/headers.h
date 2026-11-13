@@ -62,6 +62,8 @@ typedef struct
 	int measureInterval;  // steps between tissue-wide measurements
 	int snapInterval;     // steps between snapshots
 	int printSnap;        // 0 = none, 1 = whole tissue, 2 = infected cells only
+	int stateInterval;    // >0: per-cell states written every this many steps (states_<n>.bin)
+	int stateFields;      // 1: also write per-cell virions and IFN (fields_<n>.bin)
 	int ranSeed;          // seeds everything that differs between replicates
 	int tissueSeed;       // if >= 0: fixed layout of non-permissive cells
 
@@ -214,5 +216,7 @@ void record_measurement(const TissueState *s, int measureIdx, int measureInterva
                         double *aucVirus, double *aucIFN,
                         double *prevVirus, double *prevIFN, FILE *fRep);
 void print_snapshot(const Tissue *t, TissueHost *h, FILE *fSnap, int onlyInfected);
+void write_state_frame(const Tissue *t, TissueHost *h, CellState *h_state, float2 *h_field,
+                       FILE *fStates, FILE *fFields);
 
 #endif

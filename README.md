@@ -38,6 +38,11 @@ rebuild (for instance after changing `neighRadius`).
 | `auc_results.csv` | area under the viral-load and IFN curves, per replicate |
 | `cellState.csv` | time course of the last seeded cell (single replicate) |
 | `snapshots.xyz` | extended-XYZ frames for Ovito, if `printSnapshots` is 1 or 2 |
+| `inoculum_<n>.csv` | structure-file lines (0-based) of the cells seeded at t = 0, per replicate (always written) |
+| `states_<n>.bin` | if `stateInterval` > 0: one uint8 state per cell (structure-file order) every `stateInterval` steps; states 0 non-permissive, 1 susceptible, 2 infected IFN-, 3 infected IFN+, 4 refractory, 5 dead |
+| `fields_<n>.bin` | if also `stateFields = 1`: per frame, float32 virions for every cell then float32 IFN for every cell |
+
+(Added 2026-10-01; output only — trajectories are bit-identical to the previous build.)
 
 ## Source layout
 

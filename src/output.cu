@@ -119,3 +119,26 @@ void print_snapshot(const Tissue *t, TissueHost *h, FILE *fSnap, int onlyInfecte
 		        (int)state, r.x, r.y, r.z, h->field[s].x, h->field[s].y);
 	}
 }
+
+/* One frame of per-cell output in structure-file order: a uint8 state per
+   cell, and optionally float32 virions then float32 IFN per cell. */
+void write_state_frame(const Tissue *t, TissueHost *h, CellState *h_state, float2 *h_field,
+                       FILE *fStates, FILE *fFields)
+{
+	(void)h_state; (void)h_field;
+	int numCells = t->numCells;
+	cudaMemcpy(h->state, t->state, numCells*sizeof(CellState), cudaMemcpyDeviceToHost);
+	unsigned char *buf = (unsigned char*)malloc(numCells);
+	for (int o = 0; o < numCells; o++) buf[o] = (unsigned char)h->state[h->slotOf[o]];
+	fwrite(buf, 1, numCells, fStates);
+	free(buf);
+
+	if (!fFields) return;
+	cudaMemcpy(h->field, t->field, numCells*sizeof(float2), cudaMemcpyDeviceToHost);
+	float *f = (float*)malloc(numCells*sizeof(float));
+	for (int o = 0; o < numCells; o++) f[o] = h->field[h->slotOf[o]].x;
+	fwrite(f, sizeof(float), numCells, fFields);
+	for (int o = 0; o < numCells; o++) f[o] = h->field[h->slotOf[o]].y;
+	fwrite(f, sizeof(float), numCells, fFields);
+	free(f);
+}
