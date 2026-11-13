@@ -7,13 +7,16 @@ neighbours. One time step is one minute.
 ## Build
 
 ```
-make                       # needs the CUDA toolkit and a supported gcc
-make ARCH=sm_75            # for a different GPU (sm_86 = RTX 30xx / A2000)
+make                       # needs the CUDA toolkit and a host compiler nvcc accepts
+make ARCH=sm_75            # for a different GPU (default sm_86 = RTX 30xx / A2000)
+make help                  # show the settings the Makefile detected
 ```
 
-The host compiler follows the CUDA version, so one Makefile serves both
-machines: CUDA 13 or newer uses `gcc-15`, older CUDA uses the newest of
-`gcc-14`/`gcc-13`/`gcc-12`/`gcc` it finds. `make HOST_COMPILER=...` overrides.
+`nvcc` rejects host compilers newer than its own release was tested against,
+and the names of the older ones differ between distributions, so the Makefile
+tries `nvcc`'s default first and then the versioned `g++`/`gcc` on `PATH`,
+newest first, keeping the first one `nvcc` accepts. Override it with
+`make HOST_COMPILER=g++-12`.
 
 ## Run
 
