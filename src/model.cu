@@ -101,10 +101,17 @@ __global__ void tissue_update(Tissue t, Params pars, const float *T_sys,
 				break;
 			}
 
-			// Virion production, optionally blocked by IFN (BP mechanism)
+			// Virion production, optionally blocked by IFN (BP mechanism).  BP
+			// scales the virions released, not "produced", so the dsRNA -> IFN
+			// circuit below is untouched: assembly is inhibited rather than RNA
+			// synthesis, which keeps BP independent of the IFN mechanisms.
 			float produced = virion_production(t.internalTime[i]++);
-			if (pars.flagBP) produced *= 1.0f - hill(pars.blockProd, field.y);
-			field.x += produced;
+			if (pars.flagBP) field.x += produced * (1.0f - hill(pars.blockProd, field.y));
+			else field.x += produced;
+			// The manuscript runs used the form below, where BP scaled "produced"
+			// itself and so damped IFN production as well.  Both are defensible.
+			// if (pars.flagBP) produced *= 1.0f - hill(pars.blockProd, field.y);
+			// field.x += produced;
 
 			// Only IFN-competent cells run the dsRNA -> IFN circuit
 			if (state == INFECTED_PLUS)
